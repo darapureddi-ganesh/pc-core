@@ -12,6 +12,7 @@ real and tested, and everything else has a place to slot in.
 ```
 apps/
   api/            policy lifecycle service (Fastify): quote -> bind -> issue -> endorse
+  web/            Next.js agent portal: quote -> bind -> issue, over the API
 packages/
   domain/         effective-dated / bitemporal timeline  (pure, tested)
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
@@ -83,12 +84,26 @@ curl -sX POST localhost:3000/quotes -H 'content-type: application/json' -d '{
 Then `POST /policies/:id/bind`, `/issue`, `/endorsements`, and
 `GET /policies/:id?asOf=2026-06-01` to read the re-rated slice in effect.
 
+## Agent portal (P4)
+
+`apps/web` is a Next.js portal that drives the whole flow — enter a vehicle, see
+the priced breakdown, bind and issue — by calling the API over HTTP from server
+actions. Run the two side by side (two terminals):
+
+```bash
+pnpm --filter @pc-core/api start    # API on :3000
+pnpm --filter @pc-core/web start    # portal on :3001  (build first: --filter @pc-core/web build)
+```
+
+Then open http://localhost:3001. The portal reads `API_URL` (default
+`http://127.0.0.1:3000` — IPv4 on purpose, since `localhost` can resolve to IPv6
+on Windows and miss the API).
+
 ## Next (from the build plan)
 
 - **P2** — richer rating (IDV depreciation grid, voluntary-deductible discounts, loadings)
-- **P4** — `apps/web`: Next.js agent quote-to-issue flow over this API
 - **P5** — billing ledger + claims FNOL
 - **P6** — forms (policy schedule, Form 51) + IRDAI reporting
-- **infra** — Postgres adapter for `PolicyRepository`; renew transaction
+- **infra** — Postgres adapter for `PolicyRepository`; a `@pc-core/contracts` types package shared by api + web; renew transaction
 
 See the design note and build plan for the full picture.
