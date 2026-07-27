@@ -72,3 +72,42 @@ describe("PRIVATE_CAR rating — everything traces to the product YAML", () => {
     expect(result.breakdown.ncbDisc).toBe(9000);
   });
 });
+
+describe("PRIVATE_CAR rating — depth (P2)", () => {
+  const baseRisk: QuoteInput = {
+    vehicle: { cc: 1200, idv: 600_000, rtoZone: "A", age: 2 },
+    policy: { ncb: 25 },
+    selectedAddOns: [],
+    coverages: { tpSelected: true },
+  };
+
+  it("applies a voluntary-deductible discount to OD", () => {
+    const result = quote(product, { ...baseRisk, voluntaryDeductible: 5000 });
+    // odGross 18000; volDedDisc = 18000 * 0.05 = 900
+    expect(result.breakdown.volDedDisc).toBe(900);
+    // odNet = 18000 - 4500 (ncb 25) + 0 - 900 = 12600
+    expect(result.breakdown.odNet).toBe(12600);
+  });
+
+  it("adds a loading for an older vehicle — from config, not code", () => {
+    const result = quote(product, {
+      ...baseRisk,
+      vehicle: { ...baseRisk.vehicle, age: 12 },
+      policy: { ncb: 0 },
+    });
+    // age 12 -> ">5y" od_base 0.045; odGross = 27000; OLD_VEHICLE loading 0.10
+    expect(result.breakdown.loading).toBe(2700);
+    expect(result.referrals).toHaveLength(0); // age 12 < 15 -> no referral
+  });
+
+  it("derives IDV from ex-showroom price via the depreciation grid", () => {
+    const result = quote(product, {
+      vehicle: { cc: 1200, rtoZone: "A", age: 2, exShowroomPrice: 750_000 },
+      policy: { ncb: 25 },
+      selectedAddOns: [],
+      coverages: { tpSelected: true },
+    });
+    // age 2 -> "0-3y" depreciation 0.20 -> IDV 600000 -> odBase 0.030 * 600000
+    expect(result.breakdown.odBase).toBe(18000);
+  });
+});

@@ -31,6 +31,18 @@ export interface ProductTables {
   tp_tariff: Record<string, number>;
   /** flat PA (owner-driver) premium */
   paRate: number;
+  /** voluntary-deductible amount (string key) -> OD discount fraction */
+  volDedScale: Record<string, number>;
+  /** ageBand -> depreciation fraction, used to derive IDV from ex-showroom price */
+  idvDepreciation: Record<string, number>;
+}
+
+/** A surcharge on OD gross, applied when its json-logic predicate holds. */
+export interface Loading {
+  id: string;
+  /** surcharge as a fraction of OD gross */
+  rate: number;
+  when: unknown;
 }
 
 export interface RatingStep {
@@ -65,20 +77,26 @@ export interface Product {
   tables: ProductTables;
   rating: RatingModel;
   rules: Rule[];
+  loadings: Loading[];
 }
 
 /** What a channel sends in to get a quote. */
 export interface QuoteInput {
   vehicle: {
     cc: number;
-    idv: number;
     rtoZone: string;
     /** age of the vehicle in whole years */
     age: number;
+    /** insured declared value; if omitted, derived from exShowroomPrice + age */
+    idv?: number;
+    /** ex-showroom price; with age, derives IDV via the depreciation grid */
+    exShowroomPrice?: number;
   };
   policy: { ncb: number };
   selectedAddOns: string[];
   coverages: { tpSelected: boolean };
+  /** chosen voluntary deductible; higher deductible earns an OD discount */
+  voluntaryDeductible?: number;
 }
 
 export interface RatingResult {

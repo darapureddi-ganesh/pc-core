@@ -9,6 +9,7 @@ export type {
   Rule,
   AddOn,
   Band,
+  Loading,
 } from "./types.js";
 export { loadProduct } from "./loader.js";
 export type { LoadedProduct } from "./loader.js";

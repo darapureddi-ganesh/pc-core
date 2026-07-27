@@ -1,4 +1,5 @@
 import { Parser } from "expr-eval";
+import jsonLogic from "json-logic-js";
 import type { Band, Product, QuoteInput } from "./types.js";
 
 const round2 = (n: number): number => Math.round(n * 100) / 100;
@@ -10,12 +11,32 @@ function band(value: number, bands: Band[]): string {
   return hit.label;
 }
 
+/** IDV as supplied, or derived from ex-showroom price via the depreciation grid. */
+function resolveIdv(product: Product, input: QuoteInput, ageBand: string): number {
+  if (input.vehicle.idv !== undefined) return input.vehicle.idv;
+  const exShowroom = input.vehicle.exShowroomPrice;
+  if (exShowroom === undefined) {
+    throw new Error("provide either vehicle.idv or vehicle.exShowroomPrice");
+  }
+  const depreciation = product.tables.idvDepreciation[ageBand];
+  if (depreciation === undefined) {
+    throw new Error(`no depreciation factor for age band ${ageBand}`);
+  }
+  return round2(exShowroom * (1 - depreciation));
+}
+
+/** Sum the rates of every loading whose predicate holds for this risk. */
+function loadingRate(product: Product, ruleContext: Record<string, number>): number {
+  return product.loadings.reduce(
+    (sum, l) => (jsonLogic.apply(l.when, ruleContext) === true ? sum + l.rate : sum),
+    0,
+  );
+}
+
 /**
  * Derive the flat rating context from the product tables and the quote input.
- *
- * This is the engine's job: banding, table lookups, scale resolution. The
- * VALUES it reads (rates, bands, the NCB scale) and the ORDER of the algorithm
- * all live in the product YAML — so a rate change never touches this file.
+ * The engine does banding, table lookups and predicate evaluation; the VALUES
+ * and the algorithm ORDER all live in the product YAML.
  */
 function deriveContext(
   product: Product,
@@ -26,6 +47,7 @@ function deriveContext(
 
   const ccBand = band(vehicle.cc, tables.ccBands);
   const ageBand = band(vehicle.age, tables.ageBands);
+  const idv = resolveIdv(product, input, ageBand);
 
   const odBaseRate = tables.od_base[vehicle.rtoZone]?.[ccBand]?.[ageBand];
   if (odBaseRate === undefined) {
@@ -45,14 +67,18 @@ function deriveContext(
     return sum + addOn.rate;
   }, 0);
 
+  const voluntaryDeductible = input.voluntaryDeductible ?? 0;
+  const ruleContext = { age: vehicle.age, cc: vehicle.cc, idv, ncb: policy.ncb };
+
   return {
-    idv: vehicle.idv,
+    idv,
     odBaseRate,
     addOnsRate,
     ncbRate: tables.ncbScale[String(policy.ncb)] ?? 0,
     tpAmount,
     paAmount: tables.paRate,
-    loadings: 0,
+    volDedRate: tables.volDedScale[String(voluntaryDeductible)] ?? 0,
+    loadingRate: loadingRate(product, ruleContext),
     gstRate: product.rating.gstRate,
   };
 }
