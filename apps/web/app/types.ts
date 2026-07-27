@@ -2,7 +2,15 @@
 // pure types would remove this duplication — a clean follow-up.
 
 export interface QuoteInput {
-  vehicle: { cc: number; idv: number; rtoZone: string; age: number };
+  vehicle: {
+    cc: number;
+    idv: number;
+    rtoZone: string;
+    age: number;
+    registrationNo?: string;
+    make?: string;
+    model?: string;
+  };
   policy: { ncb: number };
   selectedAddOns: string[];
   coverages: { tpSelected: boolean };
@@ -13,6 +21,7 @@ export interface Rating {
   productVersion: string;
   breakdown: Record<string, number>;
   total: number;
+  sumInsured: number;
   referrals: Array<{ id: string; message: string }>;
   errors: Array<{ id: string; message: string }>;
 }
@@ -29,4 +38,19 @@ export interface Policy {
   productVersion: string;
   status: string;
   term: { from: string; to: string };
+}
+
+export interface Installment {
+  seq: number;
+  dueDate: string;
+  amount: number;
+}
+
+export interface BillingStatement {
+  policyId: string;
+  plan: string;
+  total: number;
+  paid: number;
+  outstanding: number;
+  installments: Installment[];
 }

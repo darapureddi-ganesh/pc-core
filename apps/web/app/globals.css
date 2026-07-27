@@ -306,3 +306,44 @@ table.breakdown .lbl {
 .actionbtns {
   margin-top: 1rem;
 }
+
+.doclinks {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.5rem 1rem;
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--line-strong);
+}
+.doclinks a {
+  font-size: 0.84rem;
+  color: var(--accent-ink);
+  font-weight: 600;
+  text-decoration: none;
+}
+.doclinks a:hover {
+  text-decoration: underline;
+}
+
+.billing {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--line-strong);
+}
+.billing-row {
+  display: flex;
+  justify-content: space-between;
+  font-size: 0.86rem;
+  color: var(--ink-2);
+  padding: 0.15rem 0;
+  font-variant-numeric: tabular-nums;
+}
+.billing button.primary {
+  margin-top: 0.6rem;
+}
+.paid-badge {
+  margin-top: 0.5rem;
+  color: var(--good);
+  font-weight: 600;
+  font-size: 0.86rem;
+}

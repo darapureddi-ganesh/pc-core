@@ -1,8 +1,15 @@
 "use client";
 
 import { useState } from "react";
-import { bindPolicy, issuePolicy, quotePolicy } from "./actions";
-import type { Policy, QuoteResult } from "./types";
+import {
+  bindPolicy,
+  getBillingStatement,
+  issuePolicy,
+  payOutstanding,
+  quotePolicy,
+} from "./actions";
+import { API_PUBLIC_BASE } from "./config";
+import type { BillingStatement, Policy, QuoteResult } from "./types";
 
 const ADDONS: Array<{ code: string; label: string }> = [
   { code: "ZERO_DEP", label: "Zero Dep" },
@@ -17,6 +24,8 @@ const BREAKDOWN_ROWS: Array<[string, string]> = [
   ["odAddOns", "Add-ons"],
   ["odGross", "OD gross"],
   ["ncbDisc", "NCB discount"],
+  ["loading", "Loading"],
+  ["volDedDisc", "Deductible discount"],
   ["odNet", "OD net"],
   ["tp", "Third-party"],
   ["pa", "Personal accident"],
@@ -25,9 +34,13 @@ const BREAKDOWN_ROWS: Array<[string, string]> = [
 ];
 
 const inr = (n: number) =>
-  "₹" + n.toLocaleString("en-IN", { minimumFractionDigits: 2 });
+  "₹" + (n === 0 ? 0 : n).toLocaleString("en-IN", { minimumFractionDigits: 2 });
 
 export default function Page() {
+  const [insuredName, setInsuredName] = useState("A. Sharma");
+  const [registrationNo, setRegistrationNo] = useState("KA01AB1234");
+  const [make, setMake] = useState("Maruti");
+  const [model, setModel] = useState("Swift");
   const [cc, setCc] = useState(1200);
   const [idv, setIdv] = useState(600000);
   const [zone, setZone] = useState("A");
@@ -37,6 +50,7 @@ export default function Page() {
 
   const [quote, setQuote] = useState<QuoteResult | null>(null);
   const [policy, setPolicy] = useState<Policy | null>(null);
+  const [billing, setBilling] = useState<BillingStatement | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
@@ -70,20 +84,37 @@ export default function Page() {
     e.preventDefault();
     run(async () => {
       const result = await quotePolicy({
-        vehicle: { cc, idv, rtoZone: zone, age },
-        policy: { ncb },
-        selectedAddOns: addOns,
-        coverages: { tpSelected: true },
+        insured: { name: insuredName },
+        risk: {
+          vehicle: { cc, idv, rtoZone: zone, age, registrationNo, make, model },
+          policy: { ncb },
+          selectedAddOns: addOns,
+          coverages: { tpSelected: true },
+        },
       });
       setQuote(result);
       setPolicy(null);
+      setBilling(null);
     });
   };
 
   const onBind = () =>
     quote && run(async () => setPolicy(await bindPolicy(quote.policyId)));
+
   const onIssue = () =>
-    quote && run(async () => setPolicy(await issuePolicy(quote.policyId)));
+    quote &&
+    run(async () => {
+      const issued = await issuePolicy(quote.policyId);
+      setPolicy(issued);
+      setBilling(await getBillingStatement(quote.policyId));
+    });
+
+  const onPayInFull = () =>
+    quote &&
+    billing &&
+    run(async () => {
+      setBilling(await payOutstanding(quote.policyId, billing.outstanding));
+    });
 
   return (
     <main className="wrap">
@@ -91,6 +122,48 @@ export default function Page() {
       <form className="card" onSubmit={onQuote}>
         <span className="eyebrow">Risk</span>
         <h2>Private car details</h2>
+
+        <div className="row">
+          <div className="field">
+            <label htmlFor="insuredName">Insured name</label>
+            <input
+              id="insuredName"
+              type="text"
+              value={insuredName}
+              onChange={(e) => setInsuredName(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="registrationNo">Registration no.</label>
+            <input
+              id="registrationNo"
+              type="text"
+              value={registrationNo}
+              onChange={(e) => setRegistrationNo(e.target.value)}
+            />
+          </div>
+        </div>
+
+        <div className="row">
+          <div className="field">
+            <label htmlFor="make">Make</label>
+            <input
+              id="make"
+              type="text"
+              value={make}
+              onChange={(e) => setMake(e.target.value)}
+            />
+          </div>
+          <div className="field">
+            <label htmlFor="model">Model</label>
+            <input
+              id="model"
+              type="text"
+              value={model}
+              onChange={(e) => setModel(e.target.value)}
+            />
+          </div>
+        </div>
 
         <div className="row">
           <div className="field">
@@ -223,7 +296,8 @@ export default function Page() {
                 {BREAKDOWN_ROWS.map(([key, label]) => {
                   const v = quote.rating.breakdown[key];
                   if (v === undefined) return null;
-                  const shown = key === "ncbDisc" ? -v : v;
+                  const negative = key === "ncbDisc" || key === "volDedDisc";
+                  const shown = negative ? -v : v;
                   return (
                     <tr key={key}>
                       <td className="lbl">{label}</td>
@@ -271,6 +345,47 @@ export default function Page() {
                     Policy issued. Total premium{" "}
                     <strong>{inr(quote.rating.total)}</strong>.
                   </div>
+
+                  <div className="doclinks">
+                    <a
+                      href={`${API_PUBLIC_BASE}/policies/${policy.policyId}/documents/schedule`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Policy schedule ↗
+                    </a>
+                    <a
+                      href={`${API_PUBLIC_BASE}/policies/${policy.policyId}/documents/certificate`}
+                      target="_blank"
+                      rel="noreferrer"
+                    >
+                      Certificate (Form 51) ↗
+                    </a>
+                  </div>
+
+                  {billing && (
+                    <div className="billing">
+                      <div className="billing-row">
+                        <span>Paid</span>
+                        <span>{inr(billing.paid)}</span>
+                      </div>
+                      <div className="billing-row">
+                        <span>Outstanding</span>
+                        <span>{inr(billing.outstanding)}</span>
+                      </div>
+                      {billing.outstanding > 0 ? (
+                        <button
+                          className="primary"
+                          onClick={onPayInFull}
+                          disabled={busy}
+                        >
+                          {busy ? "Recording…" : "Pay in full"}
+                        </button>
+                      ) : (
+                        <div className="paid-badge">✓ Paid in full</div>
+                      )}
+                    </div>
+                  )}
                 </div>
               )}
             </div>

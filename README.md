@@ -9,6 +9,24 @@ billing, claims, and documents**, with a Next.js agent portal on top. All logic
 is pure and tested; persistence is behind repository ports (in-memory today,
 Postgres-ready).
 
+## Try it
+
+One command runs the API and the agent portal together:
+
+```bash
+pnpm install
+pnpm dev
+```
+
+Then open **http://localhost:3001** and click through the whole lifecycle:
+enter a vehicle, get a config-driven quote, bind, issue — the portal then
+auto-invoices the premium, lets you pay it off, and links straight to the
+generated **policy schedule** and **Form 51 certificate**. Every number and
+every document field traces back to `packages/products/private_car.2026.1.yaml`.
+
+(`pnpm demo` runs a separate, non-interactive CLI walkthrough of the rating
+engine and the temporal timeline — no servers needed.)
+
 ## What's here
 
 ```
@@ -91,17 +109,18 @@ Then `POST /policies/:id/bind`, `/issue`, `/endorsements`, and
 ## Agent portal (P4)
 
 `apps/web` is a Next.js portal that drives the whole flow — enter a vehicle, see
-the priced breakdown, bind and issue — by calling the API over HTTP from server
-actions. Run the two side by side (two terminals):
+the priced breakdown, bind, issue, pay the invoice, and open the generated
+documents — by calling the API over HTTP from server actions. `pnpm dev` (above)
+runs it alongside the API; to run them separately:
 
 ```bash
 pnpm --filter @pc-core/api start    # API on :3000
 pnpm --filter @pc-core/web start    # portal on :3001  (build first: --filter @pc-core/web build)
 ```
 
-Then open http://localhost:3001. The portal reads `API_URL` (default
-`http://127.0.0.1:3000` — IPv4 on purpose, since `localhost` can resolve to IPv6
-on Windows and miss the API).
+The portal reads `API_URL` server-side (default `http://127.0.0.1:3000` — IPv4
+on purpose, since `localhost` can resolve to IPv6 on Windows and miss the API)
+and links to documents via the client-visible `API_PUBLIC_BASE` in `app/config.ts`.
 
 ## Billing & claims (P5)
 
@@ -140,6 +159,6 @@ insurer.
 
 - **richer rating** — pro-rated endorsement premium, renewal terms
 - **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger
-- **portal** — surface schedule / certificate download in the agent portal (P4)
+- **portal** — surface claims (FNOL) in the agent portal alongside billing and documents
 
 See the design note and build plan for the full picture.
