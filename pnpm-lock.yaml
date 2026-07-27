@@ -41,6 +41,9 @@ importers:
       '@pc-core/domain':
         specifier: workspace:*
         version: link:../../packages/domain
+      '@pc-core/forms':
+        specifier: workspace:*
+        version: link:../../packages/forms
       '@pc-core/products':
         specifier: workspace:*
         version: link:../../packages/products
@@ -95,6 +98,8 @@ importers:
         version: 0.36.4(@types/react@19.2.17)(react@19.2.8)
 
   packages/domain: {}
+
+  packages/forms: {}
 
   packages/products: {}
 

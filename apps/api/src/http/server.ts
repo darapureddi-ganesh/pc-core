@@ -4,11 +4,13 @@ import { ServiceError, type ServiceErrorCode } from "../service/errors.js";
 import type { PolicyService } from "../service/policy-service.js";
 import type { BillingService } from "../service/billing-service.js";
 import type { ClaimsService } from "../service/claims-service.js";
+import type { DocumentService } from "../service/document-service.js";
 
 export interface Services {
   policy: PolicyService;
   billing: BillingService;
   claims: ClaimsService;
+  documents: DocumentService;
 }
 
 const riskSchema = z.object({
@@ -18,6 +20,9 @@ const riskSchema = z.object({
     age: z.number(),
     idv: z.number().optional(),
     exShowroomPrice: z.number().optional(),
+    registrationNo: z.string().optional(),
+    make: z.string().optional(),
+    model: z.string().optional(),
   }),
   policy: z.object({ ncb: z.number() }),
   selectedAddOns: z.array(z.string()),
@@ -30,6 +35,7 @@ const quoteSchema = z.object({
   version: z.string().optional(),
   term: z.object({ from: z.string(), to: z.string() }),
   risk: riskSchema,
+  insured: z.object({ name: z.string() }).optional(),
 });
 
 const changeSchema = z.discriminatedUnion("op", [
@@ -153,6 +159,26 @@ export function buildServer(services: Services): FastifyInstance {
   );
 
   app.get("/claims/:id", async (req) => services.claims.get(id(req)));
+
+  // ── documents & reporting ─────────────────────────────────────────────────
+  app.get("/policies/:id/documents", async (req) =>
+    services.documents.availableForms(id(req)),
+  );
+
+  app.get("/policies/:id/documents/schedule", async (req, reply) => {
+    const html = await services.documents.schedule(id(req));
+    return reply.type("text/html; charset=utf-8").send(html);
+  });
+
+  app.get("/policies/:id/documents/certificate", async (req, reply) => {
+    const html = await services.documents.certificate(id(req));
+    return reply.type("text/html; charset=utf-8").send(html);
+  });
+
+  app.get("/reports/premium-register", async (_req, reply) => {
+    const csv = await services.documents.premiumRegisterCsv();
+    return reply.type("text/csv; charset=utf-8").send(csv);
+  });
 
   return app;
 }

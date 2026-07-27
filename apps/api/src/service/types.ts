@@ -38,6 +38,8 @@ export interface PolicyAggregate {
   baseRecordedAt: string;
   transactions: StoredTxn[];
   cancelledEffectiveFrom?: string;
+  /** policyholder identity — descriptive, used by documents */
+  insured?: { name: string };
 }
 
 /** A reconstructed point-in-time view: the risk in effect and its re-rating. */

@@ -9,6 +9,7 @@ export interface PolicyRepository {
   create(policy: PolicyAggregate): Promise<void>;
   get(policyId: string): Promise<PolicyAggregate | undefined>;
   save(policy: PolicyAggregate): Promise<void>;
+  list(): Promise<PolicyAggregate[]>;
   nextPolicyNumber(): Promise<string>;
 }
 
@@ -28,6 +29,10 @@ export class InMemoryPolicyRepository implements PolicyRepository {
 
   async save(policy: PolicyAggregate): Promise<void> {
     this.store.set(policy.policyId, structuredClone(policy));
+  }
+
+  async list(): Promise<PolicyAggregate[]> {
+    return [...this.store.values()].map((p) => structuredClone(p));
   }
 
   async nextPolicyNumber(): Promise<string> {

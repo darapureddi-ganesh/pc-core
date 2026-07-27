@@ -4,8 +4,10 @@ An open-source **P&C insurance core** — motor line. A config-over-code,
 effective-dated policy platform in the spirit of Guidewire / Duck Creek, built
 in the open.
 
-This repo is the **P1 skeleton**: the two things that can't be retrofitted are
-real and tested, and everything else has a place to slot in.
+A working motor core on an effective-dated spine: **policy lifecycle, rating,
+billing, claims, and documents**, with a Next.js agent portal on top. All logic
+is pure and tested; persistence is behind repository ports (in-memory today,
+Postgres-ready).
 
 ## What's here
 
@@ -17,6 +19,7 @@ packages/
   domain/         effective-dated / bitemporal timeline  (pure, tested)
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
   billing/        double-entry ledger + installment schedule  (pure, tested)
+  forms/          policy schedule + Form 51 + premium register renderers  (pure, tested)
   db/             drizzle schema + the temporal migration (exclusion constraint)
   products/       private_car.2026.1.yaml — the product IS this file
 tooling/
@@ -117,10 +120,26 @@ POST /claims/:id/reserve      {amount}
 POST /claims/:id/settle       {amount}
 ```
 
+## Documents & reporting (P6)
+
+Which documents a product issues is config (`product.forms` in the YAML);
+rendering is pure (`packages/forms`). Data is gathered by reconstructing the
+policy at inception, so a schedule always reflects the cover actually in force.
+
+```bash
+GET /policies/:id/documents             # forms this product issues (from config)
+GET /policies/:id/documents/schedule    # policy schedule (HTML, print-ready)
+GET /policies/:id/documents/certificate # Certificate of Insurance, Form 51 (HTML)
+GET /reports/premium-register           # IRDAI-style premium register (CSV)
+```
+
+Documents are watermarked **SPECIMEN** and clearly marked as not issued by a real
+insurer.
+
 ## Next (from the build plan)
 
-- **P6** — forms (policy schedule, Form 51) + IRDAI reporting
 - **richer rating** — pro-rated endorsement premium, renewal terms
 - **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger
+- **portal** — surface schedule / certificate download in the agent portal (P4)
 
 See the design note and build plan for the full picture.

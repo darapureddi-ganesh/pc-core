@@ -45,6 +45,12 @@ export interface Loading {
   when: unknown;
 }
 
+/** A document the product issues, bound to a named template. */
+export interface FormBinding {
+  id: string;
+  template: string;
+}
+
 export interface RatingStep {
   name: string;
   /** arithmetic expression over prior step names + the derived context */
@@ -78,6 +84,7 @@ export interface Product {
   rating: RatingModel;
   rules: Rule[];
   loadings: Loading[];
+  forms: FormBinding[];
 }
 
 /** What a channel sends in to get a quote. */
@@ -91,6 +98,10 @@ export interface QuoteInput {
     idv?: number;
     /** ex-showroom price; with age, derives IDV via the depreciation grid */
     exShowroomPrice?: number;
+    /** descriptive only (documents); not used in rating */
+    registrationNo?: string;
+    make?: string;
+    model?: string;
   };
   policy: { ncb: number };
   selectedAddOns: string[];

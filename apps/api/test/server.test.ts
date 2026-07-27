@@ -6,12 +6,14 @@ import { BillingService } from "../src/service/billing-service.js";
 import { InMemoryBillingRepository } from "../src/service/billing-repository.js";
 import { ClaimsService } from "../src/service/claims-service.js";
 import { InMemoryClaimsRepository } from "../src/service/claims-repository.js";
+import { DocumentService } from "../src/service/document-service.js";
 
 const newApp = () => {
   const policy = new PolicyService(new InMemoryPolicyRepository());
   const billing = new BillingService(new InMemoryBillingRepository());
   const claims = new ClaimsService(new InMemoryClaimsRepository(), policy);
-  return buildServer({ policy, billing, claims });
+  const documents = new DocumentService(policy);
+  return buildServer({ policy, billing, claims, documents });
 };
 
 const quotePayload = {
@@ -89,6 +91,30 @@ describe("HTTP API", () => {
     });
     expect(claimRes.statusCode).toBe(201);
     expect(claimRes.json().sumInsured).toBe(600_000);
+
+    await app.close();
+  });
+
+  it("renders the policy schedule and the premium register after issue", async () => {
+    const app = newApp();
+    const policyId = await issuePolicy(app);
+
+    const schedule = await app.inject({
+      method: "GET",
+      url: `/policies/${policyId}/documents/schedule`,
+    });
+    expect(schedule.statusCode).toBe(200);
+    expect(schedule.headers["content-type"]).toContain("text/html");
+    expect(schedule.body).toContain("PC-2026-000001");
+    expect(schedule.body).toContain("₹21,642.38");
+
+    const register = await app.inject({
+      method: "GET",
+      url: "/reports/premium-register",
+    });
+    expect(register.statusCode).toBe(200);
+    expect(register.headers["content-type"]).toContain("text/csv");
+    expect(register.body).toContain("PC-2026-000001");
 
     await app.close();
   });

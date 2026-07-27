@@ -10,6 +10,7 @@ export type {
   AddOn,
   Band,
   Loading,
+  FormBinding,
 } from "./types.js";
 export { loadProduct } from "./loader.js";
 export type { LoadedProduct } from "./loader.js";

@@ -114,4 +114,21 @@ describe("policy lifecycle", () => {
       }),
     ).rejects.toMatchObject({ code: "BAD_REQUEST" });
   });
+
+  it("reports no in-force coverage on or after the cancellation date", async () => {
+    const { policyId } = await service.quote(quoteCmd);
+    await service.bind(policyId);
+    await service.issue(policyId);
+
+    // Cancel effective 2026-06-01 (T)
+    await service.cancel({ policyId, effectiveFrom: "2026-06-01" });
+
+    // T+1day: no coverage in force
+    expect(await service.getAsOf(policyId, "2026-06-02")).toBeUndefined();
+    // On the cancellation date itself coverage has already ceased (half-open)
+    expect(await service.getAsOf(policyId, "2026-06-01")).toBeUndefined();
+    // Before cancellation the policy still reconstructs as in force
+    const before = await service.getAsOf(policyId, "2026-05-31");
+    expect(before?.risk.vehicle.idv).toBe(600_000);
+  });
 });

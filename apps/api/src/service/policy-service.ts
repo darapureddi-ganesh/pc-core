@@ -25,6 +25,7 @@ export interface QuoteCommand {
   version?: string;
   term: { from: string; to: string };
   risk: MotorRisk;
+  insured?: { name: string };
 }
 
 /**
@@ -52,6 +53,7 @@ export class PolicyService {
       base: cmd.risk,
       baseRecordedAt: new Date().toISOString(),
       transactions: [],
+      insured: cmd.insured,
     };
     await this.repo.create(policy);
     return { policyId: policy.policyId, rating };
@@ -132,6 +134,10 @@ export class PolicyService {
     return this.load(policyId);
   }
 
+  async list(): Promise<PolicyAggregate[]> {
+    return this.repo.list();
+  }
+
   // ── internals ────────────────────────────────────────────────────────────
 
   /**
@@ -150,8 +156,21 @@ export class PolicyService {
       rating: priceRisk(product, risk),
     });
 
+    // A cancellation truncates coverage: nothing is in force on or after the
+    // cancellation effective date. Because slices are half-open [from, to) and
+    // `asOf` matches `date < to`, capping the term end at cancelledEffectiveFrom
+    // makes any as-of on/after that date fall outside every slice — i.e. no
+    // coverage. (There is no reinstatement in this model — the status set is
+    // QUOTED|BOUND|ISSUED|CANCELLED with no reinstate path — so no symmetric
+    // "resume coverage after `to`" handling is needed here.)
+    const term =
+      policy.cancelledEffectiveFrom &&
+      policy.cancelledEffectiveFrom < policy.term.to
+        ? { from: policy.term.from, to: policy.cancelledEffectiveFrom }
+        : policy.term;
+
     const issue: Issue<PolicySnapshot> = {
-      term: policy.term,
+      term,
       recordedAt: policy.baseRecordedAt,
       base: price(policy.base),
     };

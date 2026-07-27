@@ -94,3 +94,8 @@ rules:
     action: error
     message: "Third-Party cover is statutory and cannot be removed"
     when: { "==": [{ var: "tpSelected" }, false] }
+
+# Documents this product issues, each bound to a named template.
+forms:
+  - { id: POLICY_SCHEDULE, template: "schedule.motor.v1" }
+  - { id: FORM_51, template: "certificate.form51" }
