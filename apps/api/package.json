@@ -9,6 +9,7 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@pc-core/billing": "workspace:*",
     "@pc-core/config-engine": "workspace:*",
     "@pc-core/domain": "workspace:*",
     "@pc-core/products": "workspace:*",

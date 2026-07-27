@@ -11,11 +11,12 @@ real and tested, and everything else has a place to slot in.
 
 ```
 apps/
-  api/            policy lifecycle service (Fastify): quote -> bind -> issue -> endorse
+  api/            Fastify service: policy lifecycle + billing + claims
   web/            Next.js agent portal: quote -> bind -> issue, over the API
 packages/
   domain/         effective-dated / bitemporal timeline  (pure, tested)
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
+  billing/        double-entry ledger + installment schedule  (pure, tested)
   db/             drizzle schema + the temporal migration (exclusion constraint)
   products/       private_car.2026.1.yaml — the product IS this file
 tooling/
@@ -99,11 +100,27 @@ Then open http://localhost:3001. The portal reads `API_URL` (default
 `http://127.0.0.1:3000` — IPv4 on purpose, since `localhost` can resolve to IPv6
 on Windows and miss the API).
 
+## Billing & claims (P5)
+
+Issuing a policy auto-creates a premium **invoice** on a double-entry ledger
+(`packages/billing`); payments draw the receivable down and balances are always
+derived from journal entries, never stored. Claims are anchored to the temporal
+model: **first-notice-of-loss looks the policy up as-of the incident date**, so a
+claim's sum insured is exactly what was in force then — even across a mid-term
+IDV endorsement.
+
+```bash
+POST /policies/:id/payments   {amount, date}     # draw down the invoice
+GET  /policies/:id/billing                        # statement: total, paid, outstanding
+POST /policies/:id/claims     {incidentDate, cause}   # FNOL -> cover as-of incident
+POST /claims/:id/reserve      {amount}
+POST /claims/:id/settle       {amount}
+```
+
 ## Next (from the build plan)
 
-- **P2** — richer rating (IDV depreciation grid, voluntary-deductible discounts, loadings)
-- **P5** — billing ledger + claims FNOL
 - **P6** — forms (policy schedule, Form 51) + IRDAI reporting
-- **infra** — Postgres adapter for `PolicyRepository`; a `@pc-core/contracts` types package shared by api + web; renew transaction
+- **richer rating** — pro-rated endorsement premium, renewal terms
+- **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger
 
 See the design note and build plan for the full picture.

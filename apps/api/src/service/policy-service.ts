@@ -7,6 +7,7 @@ import {
   type Transaction,
 } from "@pc-core/domain";
 import { applyChange } from "./changes.js";
+import { ServiceError } from "./errors.js";
 import { resolveProduct } from "./products.js";
 import type { PolicyRepository } from "./repository.js";
 import type {
@@ -16,17 +17,8 @@ import type {
   RiskChange,
 } from "./types.js";
 
-export type PolicyErrorCode = "NOT_FOUND" | "CONFLICT" | "BAD_REQUEST";
-
-export class PolicyError extends Error {
-  constructor(
-    message: string,
-    readonly code: PolicyErrorCode,
-  ) {
-    super(message);
-    this.name = "PolicyError";
-  }
-}
+/** Kept as a named subclass for readability at call sites. */
+export class PolicyError extends ServiceError {}
 
 export interface QuoteCommand {
   productCode: string;

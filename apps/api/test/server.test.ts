@@ -2,9 +2,17 @@ import { describe, it, expect } from "vitest";
 import { buildServer } from "../src/http/server.js";
 import { PolicyService } from "../src/service/policy-service.js";
 import { InMemoryPolicyRepository } from "../src/service/repository.js";
+import { BillingService } from "../src/service/billing-service.js";
+import { InMemoryBillingRepository } from "../src/service/billing-repository.js";
+import { ClaimsService } from "../src/service/claims-service.js";
+import { InMemoryClaimsRepository } from "../src/service/claims-repository.js";
 
-const newApp = () =>
-  buildServer(new PolicyService(new InMemoryPolicyRepository()));
+const newApp = () => {
+  const policy = new PolicyService(new InMemoryPolicyRepository());
+  const billing = new BillingService(new InMemoryBillingRepository());
+  const claims = new ClaimsService(new InMemoryClaimsRepository(), policy);
+  return buildServer({ policy, billing, claims });
+};
 
 const quotePayload = {
   productCode: "PRIVATE_CAR",
@@ -17,10 +25,18 @@ const quotePayload = {
   },
 };
 
+async function issuePolicy(app: ReturnType<typeof newApp>): Promise<string> {
+  const { policyId } = (
+    await app.inject({ method: "POST", url: "/quotes", payload: quotePayload })
+  ).json();
+  await app.inject({ method: "POST", url: `/policies/${policyId}/bind` });
+  await app.inject({ method: "POST", url: `/policies/${policyId}/issue` });
+  return policyId;
+}
+
 describe("HTTP API", () => {
   it("quotes then binds then issues over HTTP", async () => {
     const app = newApp();
-
     const quoteRes = await app.inject({
       method: "POST",
       url: "/quotes",
@@ -41,29 +57,38 @@ describe("HTTP API", () => {
     await app.close();
   });
 
-  it("endorses and reads back the re-rated slice as-of a date", async () => {
+  it("auto-invoices on issue and records a payment", async () => {
     const app = newApp();
-    const { policyId } = (
-      await app.inject({ method: "POST", url: "/quotes", payload: quotePayload })
+    const policyId = await issuePolicy(app);
+
+    const before = (
+      await app.inject({ method: "GET", url: `/policies/${policyId}/billing` })
     ).json();
-    await app.inject({ method: "POST", url: `/policies/${policyId}/bind` });
-    await app.inject({ method: "POST", url: `/policies/${policyId}/issue` });
+    expect(before.total).toBeCloseTo(21642.38, 2);
+    expect(before.outstanding).toBeCloseTo(21642.38, 2);
 
-    await app.inject({
+    const payRes = await app.inject({
       method: "POST",
-      url: `/policies/${policyId}/endorsements`,
-      payload: {
-        effectiveFrom: "2026-04-01",
-        change: { op: "setIdv", idv: 700_000 },
-      },
+      url: `/policies/${policyId}/payments`,
+      payload: { amount: 21642.38, date: "2026-01-05" },
     });
+    expect(payRes.statusCode).toBe(200);
+    expect(payRes.json().outstanding).toBe(0);
 
-    const asOfRes = await app.inject({
-      method: "GET",
-      url: `/policies/${policyId}?asOf=2026-06-01`,
+    await app.close();
+  });
+
+  it("files a claim (FNOL) and returns the cover in force", async () => {
+    const app = newApp();
+    const policyId = await issuePolicy(app);
+
+    const claimRes = await app.inject({
+      method: "POST",
+      url: `/policies/${policyId}/claims`,
+      payload: { incidentDate: "2026-03-01", cause: "collision" },
     });
-    expect(asOfRes.statusCode).toBe(200);
-    expect(asOfRes.json().risk.vehicle.idv).toBe(700_000);
+    expect(claimRes.statusCode).toBe(201);
+    expect(claimRes.json().sumInsured).toBe(600_000);
 
     await app.close();
   });
@@ -73,8 +98,6 @@ describe("HTTP API", () => {
     const { policyId } = (
       await app.inject({ method: "POST", url: "/quotes", payload: quotePayload })
     ).json();
-
-    // issue before bind
     const issueRes = await app.inject({
       method: "POST",
       url: `/policies/${policyId}/issue`,

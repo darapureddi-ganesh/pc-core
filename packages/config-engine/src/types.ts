@@ -104,6 +104,8 @@ export interface RatingResult {
   productVersion: string;
   breakdown: Record<string, number>;
   total: number;
+  /** the (possibly derived) IDV this quote was rated on — the sum insured */
+  sumInsured: number;
   referrals: Array<{ id: string; message: string }>;
   errors: Array<{ id: string; message: string }>;
 }

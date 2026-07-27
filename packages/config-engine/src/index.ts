@@ -22,7 +22,7 @@ export type { RuleOutcome } from "./rules.js";
  * product-specific branches — the engine is the same for every line.
  */
 export function quote(product: Product, input: QuoteInput): RatingResult {
-  const breakdown = runRating(product, input);
+  const { breakdown, sumInsured } = runRating(product, input);
   const { referrals, errors } = runRules(product, input);
 
   return {
@@ -30,6 +30,7 @@ export function quote(product: Product, input: QuoteInput): RatingResult {
     productVersion: product.version,
     breakdown,
     total: breakdown.total ?? 0,
+    sumInsured,
     referrals,
     errors,
   };

@@ -41,7 +41,7 @@ function loadingRate(product: Product, ruleContext: Record<string, number>): num
 function deriveContext(
   product: Product,
   input: QuoteInput,
-): Record<string, number> {
+): { context: Record<string, number>; idv: number } {
   const { tables } = product;
   const { vehicle, policy } = input;
 
@@ -70,7 +70,7 @@ function deriveContext(
   const voluntaryDeductible = input.voluntaryDeductible ?? 0;
   const ruleContext = { age: vehicle.age, cc: vehicle.cc, idv, ncb: policy.ncb };
 
-  return {
+  const context: Record<string, number> = {
     idv,
     odBaseRate,
     addOnsRate,
@@ -81,6 +81,7 @@ function deriveContext(
     loadingRate: loadingRate(product, ruleContext),
     gstRate: product.rating.gstRate,
   };
+  return { context, idv };
 }
 
 /**
@@ -91,8 +92,8 @@ function deriveContext(
 export function runRating(
   product: Product,
   input: QuoteInput,
-): Record<string, number> {
-  const context = deriveContext(product, input);
+): { breakdown: Record<string, number>; sumInsured: number } {
+  const { context, idv } = deriveContext(product, input);
   const results: Record<string, number> = {};
 
   for (const step of product.rating.algorithm) {
@@ -101,5 +102,5 @@ export function runRating(
     results[step.name] = round2(value);
   }
 
-  return results;
+  return { breakdown: results, sumInsured: idv };
 }
