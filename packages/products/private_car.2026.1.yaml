@@ -1,0 +1,85 @@
+# ─────────────────────────────────────────────────────────────────────────
+# PRIVATE CAR — package motor product.  Everything the engine needs to quote
+# lives here as data: coverages, rate tables, the ordered rating algorithm and
+# the underwriting rules.  Change a rate, add an add-on or move a referral
+# threshold by editing this file and shipping it as a new version — no code
+# deploy.  In-flight policies keep the version they were rated on.
+# ─────────────────────────────────────────────────────────────────────────
+product: PRIVATE_CAR
+version: "2026.1"
+currency: INR
+
+coverages:
+  OD: { name: "Own Damage", mandatory: false }
+  TP: { name: "Third-Party Liability", mandatory: true } # Motor Vehicles Act
+  PA_OWNER: { name: "PA (Owner-Driver)", mandatory: true, sumInsured: 1500000 }
+  addOns:
+    ZERO_DEP:
+      name: "Zero Depreciation"
+      rate: 0.0015 # fraction of IDV
+      eligible: { "<=": [{ var: "age" }, 5] }
+    ENGINE_PROT:
+      name: "Engine Protect"
+      rate: 0.0010
+    RSA:
+      name: "Roadside Assistance"
+      rate: 0.0002
+
+tables:
+  # cc → band label
+  ccBands:
+    - { label: "<=1000", max: 1000 }
+    - { label: "1000-1500", max: 1500 }
+    - { label: ">1500", max: null }
+  # vehicle age (years) → band label
+  ageBands:
+    - { label: "0-3y", max: 3 }
+    - { label: "3-5y", max: 5 }
+    - { label: ">5y", max: null }
+  # NCB % → discount fraction (applied to OD only)
+  ncbScale: { "0": 0.0, "20": 0.20, "25": 0.25, "35": 0.35, "45": 0.45, "50": 0.50 }
+  # OD base rate as a fraction of IDV: od_base[zone][ccBand][ageBand]
+  od_base:
+    A:
+      "<=1000": { "0-3y": 0.028, "3-5y": 0.033, ">5y": 0.043 }
+      "1000-1500": { "0-3y": 0.030, "3-5y": 0.035, ">5y": 0.045 }
+      ">1500": { "0-3y": 0.034, "3-5y": 0.039, ">5y": 0.049 }
+    B:
+      "<=1000": { "0-3y": 0.026, "3-5y": 0.031, ">5y": 0.041 }
+      "1000-1500": { "0-3y": 0.028, "3-5y": 0.033, ">5y": 0.043 }
+      ">1500": { "0-3y": 0.032, "3-5y": 0.037, ">5y": 0.047 }
+  # statutory third-party tariff (flat amount) by cc band
+  tp_tariff: { "<=1000": 2094, "1000-1500": 3416, ">1500": 7897 }
+  # flat personal-accident (owner-driver) premium
+  paRate: 750
+
+rating:
+  gstRate: 0.18
+  # Ordered steps. Each expr is evaluated against the derived context plus every
+  # earlier step result. Reorder or reformulate here — it is configuration.
+  algorithm:
+    - { name: odBase, expr: "odBaseRate * idv" }
+    - { name: odAddOns, expr: "addOnsRate * idv" }
+    - { name: odGross, expr: "odBase + odAddOns" }
+    - { name: ncbDisc, expr: "odGross * ncbRate" }
+    - { name: odNet, expr: "odGross - ncbDisc + loadings" }
+    - { name: tp, expr: "tpAmount" }
+    - { name: pa, expr: "paAmount" }
+    - { name: premium, expr: "odNet + tp + pa" }
+    - { name: gst, expr: "premium * gstRate" }
+    - { name: total, expr: "premium + gst" }
+
+# Underwriting rules as json-logic predicates over the quote context.
+rules:
+  - id: VEHICLE_AGE
+    action: refer
+    message: "Underwriter review — aged vehicle"
+    when: { ">": [{ var: "age" }, 15] }
+  - id: HIGH_IDV
+    action: refer
+    message: "Sum insured exceeds binding authority"
+    when: { ">": [{ var: "idv" }, 5000000] }
+  - id: TP_STATUTORY
+    action: error
+    message: "Third-Party cover is statutory and cannot be removed"
+    when: { "==": [{ var: "tpSelected" }, false] }

@@ -1,0 +1,23 @@
+{
+  "name": "pc-core",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "description": "Open-source P&C insurance core — motor line. Config-over-code, effective-dated.",
+  "packageManager": "pnpm@10.30.3",
+  "scripts": {
+    "test": "vitest run",
+    "test:watch": "vitest",
+    "typecheck": "tsc --noEmit -p tsconfig.json",
+    "demo": "tsx tooling/demo.ts"
+  },
+  "devDependencies": {
+    "@pc-core/config-engine": "workspace:*",
+    "@pc-core/domain": "workspace:*",
+    "@pc-core/products": "workspace:*",
+    "@types/node": "^22.10.0",
+    "tsx": "^4.19.2",
+    "typescript": "^5.7.2",
+    "vitest": "^2.1.8"
+  }
+}
