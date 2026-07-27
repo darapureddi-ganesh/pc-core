@@ -10,6 +10,8 @@ real and tested, and everything else has a place to slot in.
 ## What's here
 
 ```
+apps/
+  api/            policy lifecycle service (Fastify): quote -> bind -> issue -> endorse
 packages/
   domain/         effective-dated / bitemporal timeline  (pure, tested)
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
@@ -53,12 +55,40 @@ The load-bearing line there is a Postgres **GiST exclusion constraint** that mak
 overlapping issued slices impossible at the storage layer. The pure timeline
 logic in `domain` is what gets persisted into and queried out of that table.
 
+## Policy lifecycle API (P3)
+
+`apps/api` wires the two pure packages into a lifecycle service — quote → bind →
+issue → endorse → cancel, plus as-of reconstruction — behind a Fastify HTTP
+surface. It depends only on a `PolicyRepository` port; the in-memory adapter is
+used by tests and local dev, and a Postgres/Drizzle adapter (mapping to
+`packages/db`) slots in with no code change. Endorsements are stored as
+persistable deltas and **re-rated** on read, so a backdated endorsement
+recomputes every downstream slice.
+
+```bash
+pnpm --filter @pc-core/api start    # listens on :3000 (in-memory store)
+```
+
+```bash
+# quote a car
+curl -sX POST localhost:3000/quotes -H 'content-type: application/json' -d '{
+  "productCode":"PRIVATE_CAR",
+  "term":{"from":"2026-01-01","to":"2027-01-01"},
+  "risk":{"vehicle":{"cc":1200,"idv":600000,"rtoZone":"A","age":2},
+          "policy":{"ncb":25},"selectedAddOns":["ZERO_DEP"],
+          "coverages":{"tpSelected":true}}}'
+# -> { "policyId": "...", "rating": { ... "total": 21642.38 } }
+```
+
+Then `POST /policies/:id/bind`, `/issue`, `/endorsements`, and
+`GET /policies/:id?asOf=2026-06-01` to read the re-rated slice in effect.
+
 ## Next (from the build plan)
 
 - **P2** — richer rating (IDV depreciation grid, voluntary-deductible discounts, loadings)
-- **P3** — `apps/api`: policy lifecycle service (quote → bind → issue → endorse) over these packages
-- **P4** — `apps/web`: Next.js agent quote-to-issue flow
+- **P4** — `apps/web`: Next.js agent quote-to-issue flow over this API
 - **P5** — billing ledger + claims FNOL
 - **P6** — forms (policy schedule, Form 51) + IRDAI reporting
+- **infra** — Postgres adapter for `PolicyRepository`; renew transaction
 
 See the design note and build plan for the full picture.

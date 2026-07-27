@@ -4,6 +4,8 @@
     "packages/*/src",
     "packages/*/test",
     "packages/*/types",
+    "apps/*/src",
+    "apps/*/test",
     "tooling"
   ]
 }
