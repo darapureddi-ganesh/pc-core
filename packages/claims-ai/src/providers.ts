@@ -42,7 +42,7 @@ export interface LlmClient {
  * It asks the model for strict JSON and validates the reply; any malformed or
  * partial response degrades safely to empty fields, so a bad model output can
  * never crash claim intake. This is the template a company fills in with their
- * chosen model — pc-core itself ships no model.
+ * chosen model — OpenCover itself ships no model.
  */
 export class LlmDocumentExtractor implements DocumentExtractor {
   constructor(private readonly llm: LlmClient) {}

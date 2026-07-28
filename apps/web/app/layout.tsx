@@ -8,7 +8,7 @@ import { TenantSwitcher } from "./tenant-switcher";
 import { logout } from "./login/actions";
 
 export const metadata = {
-  title: "pc-core — Agent Portal",
+  title: "OpenCover — Agent Portal",
   description: "Quote, bind and issue a private-car motor policy.",
 };
 
@@ -23,7 +23,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
       <body>
         <header className="masthead">
           <div className="inner">
-            <h1>pc-core &mdash; Agent Portal</h1>
+            <h1>OpenCover &mdash; Agent Portal</h1>
             {authed && (
               <>
                 <nav className="nav">

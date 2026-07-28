@@ -35,7 +35,7 @@ const STATUS_FROM_BETA: Record<BetaRecord["state"], PolicyStatus> = {
   cancelled: "CANCELLED",
 };
 
-/** pc-core's contract shape -> Beta's own internal shape. */
+/** OpenCover's contract shape -> Beta's own internal shape. */
 export function toBeta(policy: PolicyAggregate): BetaRecord {
   return {
     id: policy.policyId,
@@ -58,7 +58,7 @@ export function toBeta(policy: PolicyAggregate): BetaRecord {
   };
 }
 
-/** Beta's own internal shape -> pc-core's contract shape. */
+/** Beta's own internal shape -> OpenCover's contract shape. */
 export function toContract(r: BetaRecord): PolicyAggregate {
   return {
     policyId: r.id,

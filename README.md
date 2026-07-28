@@ -1,8 +1,9 @@
-# pc-core
+# OpenCover
 
 An open-source **P&C insurance core** — motor line. A config-over-code,
 effective-dated policy platform in the spirit of Guidewire / Duck Creek, built
-in the open.
+in the open. (Package scope and directory names are still `@pc-core/*` /
+`pc-core` internally — this is a branding rename, not a package/repo rename.)
 
 A working motor core on an effective-dated spine: **policy lifecycle, rating,
 billing, claims, and documents**, with a Next.js agent portal on top. All logic
@@ -19,7 +20,7 @@ pnpm dev
 ```
 
 Then open **http://localhost:3001**, sign in with the demo password
-(`pc-core-demo`, see "Portal login + tenant switching" below), and click
+(`opencover-demo`, see "Portal login + tenant switching" below), and click
 through the whole lifecycle: enter a vehicle, get a config-driven quote,
 bind, issue — the portal then auto-invoices the premium, lets you pay it
 off, and links straight to the generated **policy schedule** and
@@ -168,7 +169,7 @@ tenant-level authorization (the API already does that per-connector via
 isn't wide open to anyone with the URL.
 
 ```bash
-PORTAL_PASSWORD=your-password       # default: pc-core-demo
+PORTAL_PASSWORD=your-password       # default: opencover-demo
 PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
 ```
 
@@ -188,7 +189,7 @@ contract and get back a tenant + API key immediately, with a one-click
 "switch the portal to this tenant." Pointed at the default URL
 (`http://127.0.0.1:4000`, `apps/mock-insurer`, so run `pnpm platform`), a
 freshly-registered tenant's issued policies come back numbered by
-**that system's own scheme** (`BETA-000001`), not pc-core's — proof the
+**that system's own scheme** (`BETA-000001`), not OpenCover's — proof the
 connector is genuinely routed, not just relabeled.
 
 ## Billing & claims (P5)
@@ -254,7 +255,7 @@ insurer.
 
 ## Bring your own backend (the Connector SDK)
 
-pc-core is a platform, not a silo: a company connects **their own system** and
+OpenCover is a platform, not a silo: a company connects **their own system** and
 every feature above works against **their data**. Services never touch a database
 directly — only the storage contracts in `@pc-core/ports`
 (`PolicyRepository`, `BillingRepository`, `ClaimsRepository`). A connector is
@@ -262,14 +263,14 @@ just an implementation of those interfaces, against a database or over HTTP.
 
 The API is **multi-tenant and self-serve**. Two tenants ship seeded for the demo:
 
-- **`demo`** — pc-core's own in-memory store
+- **`demo`** — OpenCover's own in-memory store
 - **`beta`** — a policy store that lives entirely in a separate process
   (`apps/mock-insurer`) with a *deliberately different internal schema*
   (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
   over HTTP via `RemoteHttpPolicyRepository`
 
 Any third company can **onboard at runtime, no restart, no code change** — point
-pc-core at a REST service implementing the connector contract and get back an
+OpenCover at a REST service implementing the connector contract and get back an
 API key:
 
 ```bash
@@ -285,7 +286,7 @@ per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header
 curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
   -H 'content-type: application/json' -d '{ ...quote... }'
 # Gamma's issued policy is numbered by GAMMA'S OWN system and stored in its own
-# schema — pc-core never sees it. Beta's the same, via the seeded demo tenant.
+# schema — OpenCover never sees it. Beta's the same, via the seeded demo tenant.
 ```
 
 Run the platform demo (API + a stand-in external insurer, printing both demo
@@ -306,7 +307,7 @@ Two pillars of the claims-technology matrix run as pure services behind
   early-incident signals) against `FraudScorer`, ready for a real graph/anomaly
   model behind the same shape.
 
-pc-core ships no hosted model — these are honest v1s proving the pillars
+OpenCover ships no hosted model — these are honest v1s proving the pillars
 end-to-end and defining the seam a company's own model plugs into per tenant
 (`ClaimsService`'s third constructor argument). FNOL returns `fraudScore`,
 `fraudSignals`, and `extractedFields`.

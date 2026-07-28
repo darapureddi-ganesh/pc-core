@@ -3,7 +3,7 @@
  *
  * A small, deterministic set of textbook fraud indicators (repeat claiming on
  * one policy, claims filed unusually soon after inception), not a trained ML
- * model — pc-core ships no hosted ML. It exists to prove the fraud-analytics
+ * model — OpenCover ships no hosted ML. It exists to prove the fraud-analytics
  * pillar runs against ANY connected tenant's claim history through the same
  * ClaimsRepository port, and to define the interface a company can swap a
  * real graph/anomaly model behind later without touching ClaimsService.

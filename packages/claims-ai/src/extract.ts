@@ -1,7 +1,7 @@
 /**
  * Intelligent Document Processing — v1.
  *
- * This is a deterministic, regex-based extractor, not an OCR/LLM model — pc-core
+ * This is a deterministic, regex-based extractor, not an OCR/LLM model — OpenCover
  * ships no hosted ML. It exists to (a) prove the IDP pillar end-to-end at FNOL
  * with zero external dependencies, and (b) define the extraction *interface* a
  * connected company can swap a real OCR/LLM provider behind without touching

@@ -44,7 +44,7 @@ function toFlatFields(fields: ExtractedFields): Record<string, string> {
  * text, and a fraud-risk score against this tenant's own claim history — both
  * behind swappable provider interfaces (DocumentExtractor / FraudScorer), so a
  * connected company can supply a real OCR/LLM or fraud model per tenant. The
- * defaults are pc-core's own regex extractor and heuristic scorer.
+ * defaults are OpenCover's own regex extractor and heuristic scorer.
  */
 export class ClaimsService {
   private readonly extractor: DocumentExtractor;

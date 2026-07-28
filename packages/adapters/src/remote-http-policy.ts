@@ -2,9 +2,9 @@ import type { PolicyAggregate, PolicyRepository } from "@pc-core/ports";
 
 /**
  * Adapts a PolicyRepository onto a remote HTTP service — the reference
- * implementation of pc-core's REST connector contract. Any company can
+ * implementation of OpenCover's REST connector contract. Any company can
  * satisfy this contract in whatever language or database they already run,
- * front it with a thin HTTP service, and point this adapter at it. pc-core's
+ * front it with a thin HTTP service, and point this adapter at it. OpenCover's
  * PolicyService is unaware the data lives outside this process.
  *
  * Contract (relative to `baseUrl`):

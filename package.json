@@ -3,7 +3,7 @@
   "version": "0.0.0",
   "private": true,
   "type": "module",
-  "description": "Open-source P&C insurance core — motor line. Config-over-code, effective-dated.",
+  "description": "OpenCover — open-source P&C insurance core (motor line). Config-over-code, effective-dated.",
   "packageManager": "pnpm@10.30.3",
   "scripts": {
     "test": "vitest run",

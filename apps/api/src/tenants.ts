@@ -102,7 +102,7 @@ function buildServices(
  * as the in-memory one, just durable (see packages/db/migrations/0002_jsonb_adapters.sql).
  * Used when DATABASE_URL is set, so a pilot can run on infra a company
  * actually controls (e.g. India's data-localization requirement) instead of
- * pc-core's own in-memory demo store.
+ * OpenCover's own in-memory demo store.
  */
 export function buildPostgresConnector(db: Db, numberPrefix = "PC-2026"): Connector {
   return {
@@ -164,11 +164,11 @@ export class TenantRegistry {
   /**
    * Self-serve onboarding: a company points us at a REST service implementing
    * the policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository)
-   * and gets back a tenant ID + API key. No code changes on pc-core's side.
+   * and gets back a tenant ID + API key. No code changes on OpenCover's side.
    *
    * Optionally also points claims-AI's IDP extraction at a self-hosted Ollama
    * model for this tenant (see @pc-core/claims-ai's OllamaLlmClient) instead
-   * of the default regex extractor — pc-core ships no hosted model of its
+   * of the default regex extractor — OpenCover ships no hosted model of its
    * own, so this is how a company brings their own.
    */
   registerConnector(
@@ -224,13 +224,13 @@ export async function buildDemoRegistry(
     const { db } = createDb(databaseUrl);
     await seedPostgresHandlers(db, DEMO_HANDLERS);
     registry.register(
-      { tenantId: "demo", name: "pc-core demo (Postgres)" },
+      { tenantId: "demo", name: "OpenCover demo (Postgres)" },
       buildPostgresConnector(db),
       DEMO_API_KEY,
     );
   } else {
     registry.register(
-      { tenantId: "demo", name: "pc-core demo (in-memory)" },
+      { tenantId: "demo", name: "OpenCover demo (in-memory)" },
       { policy: new InMemoryPolicyRepository("PC-2026") },
       DEMO_API_KEY,
       undefined,
