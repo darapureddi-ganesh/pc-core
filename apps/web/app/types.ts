@@ -14,6 +14,8 @@ export interface QuoteInput {
   policy: { ncb: number };
   selectedAddOns: string[];
   coverages: { tpSelected: boolean };
+  /** brand-new car, first registration — prices TP as the mandatory 3-year lump sum */
+  newVehicle?: boolean;
 }
 
 export interface Rating {

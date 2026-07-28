@@ -56,9 +56,11 @@ function deriveContext(
     );
   }
 
-  const tpAmount = tables.tp_tariff[ccBand];
+  const tpTable = input.newVehicle ? tables.tp_tariff_new_vehicle_3yr : tables.tp_tariff;
+  const tpAmount = tpTable?.[ccBand];
   if (tpAmount === undefined) {
-    throw new Error(`no TP tariff for cc band ${ccBand}`);
+    const label = input.newVehicle ? "new-vehicle 3-year TP tariff" : "TP tariff";
+    throw new Error(`no ${label} for cc band ${ccBand}`);
   }
 
   const addOnsRate = input.selectedAddOns.reduce((sum, code) => {

@@ -110,4 +110,15 @@ describe("PRIVATE_CAR rating — depth (P2)", () => {
     // age 2 -> "0-3y" depreciation 0.20 -> IDV 600000 -> odBase 0.030 * 600000
     expect(result.breakdown.odBase).toBe(18000);
   });
+
+  it("prices a brand-new vehicle's TP as the mandatory 3-year lump sum, not the annual tariff", () => {
+    const result = quote(product, { ...baseRisk, newVehicle: true });
+    // 1200cc -> "1000-1500" band -> 3-year single premium, not the annual 3416
+    expect(result.breakdown.tp).toBe(10640);
+  });
+
+  it("still uses the annual TP tariff when newVehicle is not set", () => {
+    const result = quote(product, baseRisk);
+    expect(result.breakdown.tp).toBe(3416);
+  });
 });

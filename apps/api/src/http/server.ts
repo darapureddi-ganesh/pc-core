@@ -18,6 +18,7 @@ const riskSchema = z.object({
   selectedAddOns: z.array(z.string()),
   coverages: z.object({ tpSelected: z.boolean() }),
   voluntaryDeductible: z.number().optional(),
+  newVehicle: z.boolean().optional(),
 });
 
 const quoteSchema = z.object({

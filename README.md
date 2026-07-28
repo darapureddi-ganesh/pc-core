@@ -79,6 +79,15 @@ rating algorithm, and evaluates its json-logic rules. Changing the NCB scale,
 adding an add-on or moving a referral threshold is a metadata edit — the test
 proves the numbers trace to the YAML.
 
+The NCB slabs and TP tariff in that YAML aren't placeholders — they're sourced
+from real IRDAI regulation: NCB (20/25/35/45/50%) from the 2002 India Motor
+Tariff, and the annual TP premium (₹2,094 / ₹3,416 / ₹7,897 by cc) plus the
+mandatory **3-year new-vehicle TP lump sum** (₹6,521 / ₹10,640 / ₹24,596) from
+the Gazette of India's *Motor Vehicles (Third Party Insurance Base Premium and
+Liability) Rules, 2022*. Check "New vehicle (first registration)" on the quote
+form to price a brand-new car's mandatory 3-year TP term instead of the annual
+one (`newVehicle` on `QuoteInput` / `POST /quotes`).
+
 ## Where the database comes in
 
 `packages/db` holds two things:
