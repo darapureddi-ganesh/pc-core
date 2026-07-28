@@ -10,7 +10,8 @@
     "test:watch": "vitest",
     "typecheck": "tsc --noEmit -p tsconfig.json",
     "demo": "tsx tooling/demo.ts",
-    "dev": "concurrently -n api,web -c blue,green \"pnpm --filter @pc-core/api dev\" \"pnpm --filter @pc-core/web dev\""
+    "dev": "concurrently -n api,web -c blue,green \"pnpm --filter @pc-core/api dev\" \"pnpm --filter @pc-core/web dev\"",
+    "platform": "concurrently -n acme,api -c magenta,blue \"pnpm --filter @pc-core/mock-insurer dev\" \"pnpm --filter @pc-core/api dev\""
   },
   "devDependencies": {
     "@pc-core/config-engine": "workspace:*",

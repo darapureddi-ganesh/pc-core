@@ -6,16 +6,16 @@ import {
   type Issue,
   type Transaction,
 } from "@pc-core/domain";
-import { applyChange } from "./changes.js";
-import { ServiceError } from "./errors.js";
-import { resolveProduct } from "./products.js";
-import type { PolicyRepository } from "./repository.js";
 import type {
   MotorRisk,
   PolicyAggregate,
+  PolicyRepository,
   PolicySnapshot,
   RiskChange,
-} from "./types.js";
+} from "@pc-core/ports";
+import { applyChange } from "./changes.js";
+import { ServiceError } from "./errors.js";
+import { resolveProduct } from "./products.js";
 
 /** Kept as a named subclass for readability at call sites. */
 export class PolicyError extends ServiceError {}

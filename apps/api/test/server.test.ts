@@ -1,20 +1,18 @@
 import { describe, it, expect } from "vitest";
+import { InMemoryPolicyRepository } from "@pc-core/adapters";
 import { buildServer } from "../src/http/server.js";
-import { PolicyService } from "../src/service/policy-service.js";
-import { InMemoryPolicyRepository } from "../src/service/repository.js";
-import { BillingService } from "../src/service/billing-service.js";
-import { InMemoryBillingRepository } from "../src/service/billing-repository.js";
-import { ClaimsService } from "../src/service/claims-service.js";
-import { InMemoryClaimsRepository } from "../src/service/claims-repository.js";
-import { DocumentService } from "../src/service/document-service.js";
+import { TenantRegistry } from "../src/tenants.js";
 
-const newApp = () => {
-  const policy = new PolicyService(new InMemoryPolicyRepository());
-  const billing = new BillingService(new InMemoryBillingRepository());
-  const claims = new ClaimsService(new InMemoryClaimsRepository(), policy);
-  const documents = new DocumentService(policy);
-  return buildServer({ policy, billing, claims, documents });
+const newRegistry = () => {
+  const registry = new TenantRegistry();
+  registry.register(
+    { tenantId: "demo", name: "pc-core demo" },
+    { policy: new InMemoryPolicyRepository() },
+  );
+  return registry;
 };
+
+const newApp = () => buildServer(newRegistry());
 
 const quotePayload = {
   productCode: "PRIVATE_CAR",
@@ -27,17 +25,33 @@ const quotePayload = {
   },
 };
 
-async function issuePolicy(app: ReturnType<typeof newApp>): Promise<string> {
+async function issuePolicy(
+  app: ReturnType<typeof newApp>,
+  tenantId = "demo",
+): Promise<string> {
   const { policyId } = (
-    await app.inject({ method: "POST", url: "/quotes", payload: quotePayload })
+    await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: { "x-tenant-id": tenantId },
+    })
   ).json();
-  await app.inject({ method: "POST", url: `/policies/${policyId}/bind` });
-  await app.inject({ method: "POST", url: `/policies/${policyId}/issue` });
+  await app.inject({
+    method: "POST",
+    url: `/policies/${policyId}/bind`,
+    headers: { "x-tenant-id": tenantId },
+  });
+  await app.inject({
+    method: "POST",
+    url: `/policies/${policyId}/issue`,
+    headers: { "x-tenant-id": tenantId },
+  });
   return policyId;
 }
 
 describe("HTTP API", () => {
-  it("quotes then binds then issues over HTTP", async () => {
+  it("quotes then binds then issues over HTTP, defaulting to the demo tenant", async () => {
     const app = newApp();
     const quoteRes = await app.inject({
       method: "POST",
@@ -129,6 +143,78 @@ describe("HTTP API", () => {
       url: `/policies/${policyId}/issue`,
     });
     expect(issueRes.statusCode).toBe(409);
+
+    await app.close();
+  });
+});
+
+describe("multi-tenancy — the same API, routed to different connectors", () => {
+  it("isolates data between two tenants sharing one running API", async () => {
+    const registry = newRegistry();
+    registry.register(
+      { tenantId: "other", name: "Other Co" },
+      { policy: new InMemoryPolicyRepository("OTHER") },
+    );
+    const app = buildServer(registry);
+
+    const demoPolicyId = await issuePolicy(app, "demo");
+    const otherPolicyId = await issuePolicy(app, "other");
+
+    // The demo tenant's request cannot see the other tenant's policy, and vice versa.
+    const demoSeesOther = await app.inject({
+      method: "GET",
+      url: `/policies/${otherPolicyId}`,
+      headers: { "x-tenant-id": "demo" },
+    });
+    expect(demoSeesOther.statusCode).toBe(404);
+
+    const otherSeesDemo = await app.inject({
+      method: "GET",
+      url: `/policies/${demoPolicyId}`,
+      headers: { "x-tenant-id": "other" },
+    });
+    expect(otherSeesDemo.statusCode).toBe(404);
+
+    // Each tenant's own connector still numbers policies its own way.
+    const demoPolicy = (
+      await app.inject({
+        method: "GET",
+        url: `/policies/${demoPolicyId}`,
+        headers: { "x-tenant-id": "demo" },
+      })
+    ).json();
+    const otherPolicy = (
+      await app.inject({
+        method: "GET",
+        url: `/policies/${otherPolicyId}`,
+        headers: { "x-tenant-id": "other" },
+      })
+    ).json();
+    expect(demoPolicy.policyNumber).toMatch(/^PC-2026-/);
+    expect(otherPolicy.policyNumber).toMatch(/^OTHER-/);
+
+    await app.close();
+  });
+
+  it("returns 404 for an unregistered tenant", async () => {
+    const app = newApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: { "x-tenant-id": "nonexistent" },
+    });
+    expect(res.statusCode).toBe(404);
+    expect(res.json().code).toBe("NOT_FOUND");
+
+    await app.close();
+  });
+
+  it("lists registered tenants", async () => {
+    const app = newApp();
+    const res = await app.inject({ method: "GET", url: "/tenants" });
+    expect(res.statusCode).toBe(200);
+    expect(res.json()).toEqual([{ tenantId: "demo", name: "pc-core demo" }]);
 
     await app.close();
   });

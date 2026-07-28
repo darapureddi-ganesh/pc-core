@@ -9,10 +9,13 @@
     "start": "tsx src/index.ts"
   },
   "dependencies": {
+    "@pc-core/adapters": "workspace:*",
     "@pc-core/billing": "workspace:*",
+    "@pc-core/claims-ai": "workspace:*",
     "@pc-core/config-engine": "workspace:*",
     "@pc-core/domain": "workspace:*",
     "@pc-core/forms": "workspace:*",
+    "@pc-core/ports": "workspace:*",
     "@pc-core/products": "workspace:*",
     "fastify": "^5.1.0",
     "zod": "^3.24.1"

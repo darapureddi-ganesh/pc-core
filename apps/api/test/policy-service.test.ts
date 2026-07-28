@@ -4,8 +4,8 @@ import {
   PolicyError,
   type QuoteCommand,
 } from "../src/service/policy-service.js";
-import { InMemoryPolicyRepository } from "../src/service/repository.js";
-import type { MotorRisk } from "../src/service/types.js";
+import { InMemoryPolicyRepository } from "@pc-core/adapters";
+import type { MotorRisk } from "@pc-core/ports";
 
 const risk: MotorRisk = {
   vehicle: { cc: 1200, idv: 600_000, rtoZone: "A", age: 2 },

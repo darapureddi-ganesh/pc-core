@@ -1,0 +1,16 @@
+{
+  "name": "@pc-core/adapters",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "exports": {
+    ".": "./src/index.ts"
+  },
+  "dependencies": {
+    "@pc-core/ports": "workspace:*"
+  },
+  "devDependencies": {
+    "fastify": "^5.1.0"
+  }
+}

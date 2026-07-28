@@ -7,11 +7,8 @@ import {
   type InstallmentPlan,
   type JournalEntry,
 } from "@pc-core/billing";
+import type { BillingAccount, BillingRepository } from "@pc-core/ports";
 import { ServiceError } from "./errors.js";
-import type {
-  BillingAccount,
-  BillingRepository,
-} from "./billing-repository.js";
 
 export interface Statement {
   policyId: string;

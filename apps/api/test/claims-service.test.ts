@@ -3,10 +3,9 @@ import {
   PolicyService,
   type QuoteCommand,
 } from "../src/service/policy-service.js";
-import { InMemoryPolicyRepository } from "../src/service/repository.js";
+import { InMemoryPolicyRepository, InMemoryClaimsRepository } from "@pc-core/adapters";
 import { ClaimsService } from "../src/service/claims-service.js";
-import { InMemoryClaimsRepository } from "../src/service/claims-repository.js";
-import type { MotorRisk } from "../src/service/types.js";
+import type { MotorRisk } from "@pc-core/ports";
 
 const risk: MotorRisk = {
   vehicle: { cc: 1200, idv: 600_000, rtoZone: "A", age: 2 },
@@ -98,5 +97,52 @@ describe("claims — anchored to the temporal model", () => {
     await expect(
       claims.fnol({ policyId, incidentDate: "2026-03-01", cause: "x" }),
     ).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+});
+
+describe("claims-AI — IDP extraction and fraud scoring at FNOL", () => {
+  it("extracts fields from raw intake text into the claim record", async () => {
+    const policyId = await issued();
+    const claim = await claims.fnol({
+      policyId,
+      incidentDate: "2026-03-01",
+      cause: "collision",
+      rawIntakeText:
+        "Vehicle KA01AB1234 hit on 2026-03-01, repair estimate ₹45,000.",
+    });
+    expect(claim.extractedFields?.registrationNo).toBe("KA01AB1234");
+    expect(claim.extractedFields?.amount).toBe("₹45,000");
+  });
+
+  it("scores a claim filed just after policy inception as elevated risk", async () => {
+    const policyId = await issued();
+    const claim = await claims.fnol({
+      policyId,
+      incidentDate: "2026-01-05", // 4 days after 2026-01-01 inception
+      cause: "collision",
+    });
+    expect(claim.fraudScore).toBeGreaterThan(0);
+    expect(claim.fraudSignals).toContain(
+      "incident within 15 days of policy inception",
+    );
+  });
+
+  it("flags repeat claims on the same policy with a higher score than the first", async () => {
+    const policyId = await issued();
+    const first = await claims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "theft",
+    });
+    const second = await claims.fnol({
+      policyId,
+      incidentDate: "2026-07-01",
+      cause: "collision",
+    });
+    expect(first.fraudScore).toBe(0);
+    expect(second.fraudScore).toBeGreaterThan(0);
+    expect(second.fraudSignals).toContain(
+      "1 prior claim(s) already filed on this policy",
+    );
   });
 });

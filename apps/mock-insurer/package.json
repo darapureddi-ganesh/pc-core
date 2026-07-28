@@ -1,0 +1,15 @@
+{
+  "name": "@pc-core/mock-insurer",
+  "version": "0.0.0",
+  "private": true,
+  "type": "module",
+  "main": "./src/index.ts",
+  "scripts": {
+    "dev": "tsx watch src/index.ts",
+    "start": "tsx src/index.ts"
+  },
+  "dependencies": {
+    "@pc-core/ports": "workspace:*",
+    "fastify": "^5.1.0"
+  }
+}

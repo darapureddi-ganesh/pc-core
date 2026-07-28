@@ -31,12 +31,16 @@ engine and the temporal timeline — no servers needed.)
 
 ```
 apps/
-  api/            Fastify service: policy lifecycle + billing + claims
+  api/            multi-tenant Fastify service: lifecycle + billing + claims + docs
   web/            Next.js agent portal: quote -> bind -> issue, over the API
+  mock-insurer/   a stand-in "company's own system" — its own schema, over HTTP
 packages/
+  ports/          the Connector SDK: storage contracts a company implements
+  adapters/       reference adapters: in-memory + RemoteHttpPolicyRepository
   domain/         effective-dated / bitemporal timeline  (pure, tested)
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
   billing/        double-entry ledger + installment schedule  (pure, tested)
+  claims-ai/      IDP field extraction + fraud scoring  (pure, tested)
   forms/          policy schedule + Form 51 + premium register renderers  (pure, tested)
   db/             drizzle schema + the temporal migration (exclusion constraint)
   products/       private_car.2026.1.yaml — the product IS this file
@@ -154,6 +158,50 @@ GET /reports/premium-register           # IRDAI-style premium register (CSV)
 
 Documents are watermarked **SPECIMEN** and clearly marked as not issued by a real
 insurer.
+
+## Bring your own backend (the Connector SDK)
+
+pc-core is a platform, not a silo: a company connects **their own system** and
+every feature above works against **their data**. Services never touch a database
+directly — only the storage contracts in `@pc-core/ports`
+(`PolicyRepository`, `BillingRepository`, `ClaimsRepository`). A connector is
+just an implementation of those interfaces, against a database or over HTTP.
+
+The API is **multi-tenant**: each request carries an `X-Tenant-Id` header, and
+the registry maps it to that tenant's connector. Two tenants ship out of the box:
+
+- **`demo`** — pc-core's own in-memory store
+- **`acme`** — a policy store that lives entirely in a separate process
+  (`apps/mock-insurer`) with a *deliberately different internal schema*
+  (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
+  over HTTP via `RemoteHttpPolicyRepository`
+
+```bash
+# same API, same code — routed to Acme's external system by the tenant header
+curl -sX POST localhost:3000/quotes -H 'x-tenant-id: acme' \
+  -H 'content-type: application/json' -d '{ ...quote... }'
+# the issued policy is numbered ACME-000001 and stored in Acme's own schema;
+# GET http://localhost:4000/_raw shows it there, untranslated.
+```
+
+Run the platform demo (API + external insurer) with `pnpm platform`.
+
+## Claims-AI (from the technology matrix)
+
+Two pillars of the claims-technology matrix run as pure, swappable services on
+every connected tenant, through the same `ClaimsRepository` port:
+
+- **IDP / OCR (`extractClaimFields`)** — pulls registration numbers, policy
+  numbers, amounts and dates out of raw FNOL / OCR text (tuned for the Indian
+  document mix). A connector can swap a real OCR/LLM provider behind the same
+  interface.
+- **Fraud scoring (`scoreFraudRisk`)** — a deterministic v1 (repeat-claim and
+  suspiciously-early-incident signals) that runs at FNOL against the tenant's
+  own claim history. A real graph/anomaly model swaps in behind the same shape.
+
+Both are honest heuristics, not hosted ML — pc-core ships no model. They prove
+the pillars end-to-end and define the interface a company plugs a real model
+into. FNOL returns `fraudScore`, `fraudSignals`, and `extractedFields`.
 
 ## Next (from the build plan)
 

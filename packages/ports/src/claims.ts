@@ -11,25 +11,18 @@ export interface Claim {
   sumInsured: number;
   reserveAmount: number;
   settledAmount: number;
+  /** fields the IDP extractor pulled from raw intake text/documents, if any */
+  extractedFields?: Record<string, string>;
+  /** heuristic fraud score in [0, 1], computed at FNOL against the tenant's claim history */
+  fraudScore?: number;
+  fraudSignals?: string[];
 }
 
+/** The claims storage contract — part of the Connector SDK. `list()` lets the
+ * fraud-scoring service compare a new claim against the tenant's history. */
 export interface ClaimsRepository {
   create(claim: Claim): Promise<void>;
   get(claimId: string): Promise<Claim | undefined>;
   save(claim: Claim): Promise<void>;
-}
-
-export class InMemoryClaimsRepository implements ClaimsRepository {
-  private readonly store = new Map<string, Claim>();
-
-  async create(claim: Claim): Promise<void> {
-    this.store.set(claim.claimId, structuredClone(claim));
-  }
-  async get(claimId: string): Promise<Claim | undefined> {
-    const found = this.store.get(claimId);
-    return found ? structuredClone(found) : undefined;
-  }
-  async save(claim: Claim): Promise<void> {
-    this.store.set(claim.claimId, structuredClone(claim));
-  }
+  list(): Promise<Claim[]>;
 }

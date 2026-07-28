@@ -13,7 +13,7 @@ import type { FormBinding } from "@pc-core/config-engine";
 import { ServiceError } from "./errors.js";
 import { resolveProduct } from "./products.js";
 import type { PolicyService } from "./policy-service.js";
-import type { PolicyAggregate, PolicySnapshot } from "./types.js";
+import type { PolicyAggregate, PolicySnapshot } from "@pc-core/ports";
 
 /**
  * Documents and regulatory reporting. Which forms a product issues is config

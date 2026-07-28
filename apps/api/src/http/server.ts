@@ -1,17 +1,7 @@
-import Fastify, { type FastifyInstance } from "fastify";
+import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { ServiceError, type ServiceErrorCode } from "../service/errors.js";
-import type { PolicyService } from "../service/policy-service.js";
-import type { BillingService } from "../service/billing-service.js";
-import type { ClaimsService } from "../service/claims-service.js";
-import type { DocumentService } from "../service/document-service.js";
-
-export interface Services {
-  policy: PolicyService;
-  billing: BillingService;
-  claims: ClaimsService;
-  documents: DocumentService;
-}
+import type { TenantRegistry, TenantServices } from "../tenants.js";
 
 const riskSchema = z.object({
   vehicle: z.object({
@@ -52,14 +42,26 @@ const endorseSchema = z.object({
 });
 
 const paymentSchema = z.object({ amount: z.number(), date: z.string() });
-const fnolSchema = z.object({ incidentDate: z.string(), cause: z.string() });
+const fnolSchema = z.object({
+  incidentDate: z.string(),
+  cause: z.string(),
+  rawIntakeText: z.string().optional(),
+});
 const amountSchema = z.object({ amount: z.number() });
+
+const DEFAULT_TENANT = "demo";
 
 const httpStatus = (code: ServiceErrorCode): number =>
   code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
 
-/** Thin HTTP surface over the lifecycle, billing and claims services. */
-export function buildServer(services: Services): FastifyInstance {
+/**
+ * Thin, tenant-aware HTTP surface over the lifecycle, billing, claims and
+ * document services. Every route resolves its service bundle from the
+ * `X-Tenant-Id` header (defaulting to "demo") — the route handlers below have
+ * no idea whether the resolved tenant's data lives in-process or on the other
+ * side of an HTTP call to a connected company's own system.
+ */
+export function buildServer(registry: TenantRegistry): FastifyInstance {
   const app = Fastify({ logger: false });
 
   app.setErrorHandler((err, _req, reply) => {
@@ -74,70 +76,89 @@ export function buildServer(services: Services): FastifyInstance {
 
   const id = (req: { params: unknown }) => (req.params as { id: string }).id;
 
+  const services = (req: FastifyRequest): TenantServices => {
+    const tenantId = (req.headers["x-tenant-id"] as string) ?? DEFAULT_TENANT;
+    const tenant = registry.resolve(tenantId);
+    if (!tenant) {
+      throw new ServiceError(`unknown tenant "${tenantId}"`, "NOT_FOUND");
+    }
+    return tenant;
+  };
+
+  // ── platform ─────────────────────────────────────────────────────────────
+  app.get("/tenants", async () => registry.list());
+
   // ── policy lifecycle ───────────────────────────────────────────────────
   app.post("/quotes", async (req, reply) => {
-    const result = await services.policy.quote(quoteSchema.parse(req.body));
+    const result = await services(req).policy.quote(quoteSchema.parse(req.body));
     return reply.status(201).send(result);
   });
 
-  app.post("/policies/:id/bind", async (req) => services.policy.bind(id(req)));
+  app.post("/policies/:id/bind", async (req) =>
+    services(req).policy.bind(id(req)),
+  );
 
   app.post("/policies/:id/issue", async (req) => {
+    const { policy, billing } = services(req);
     const policyId = id(req);
-    const policy = await services.policy.issue(policyId);
+    const issued = await policy.issue(policyId);
     // Auto-invoice on issue (full premium, single installment at inception).
-    const snapshot = await services.policy.getAsOf(policyId, policy.term.from);
-    await services.billing.createInvoice({
+    const snapshot = await policy.getAsOf(policyId, issued.term.from);
+    await billing.createInvoice({
       policyId,
       total: snapshot?.rating.total ?? 0,
       plan: "FULL",
-      startDate: policy.term.from,
+      startDate: issued.term.from,
     });
-    return policy;
+    return issued;
   });
 
   app.post("/policies/:id/endorsements", async (req) =>
-    services.policy.endorse({ policyId: id(req), ...endorseSchema.parse(req.body) }),
+    services(req).policy.endorse({
+      policyId: id(req),
+      ...endorseSchema.parse(req.body),
+    }),
   );
 
   app.post("/policies/:id/cancel", async (req) => {
     const { effectiveFrom } = z
       .object({ effectiveFrom: z.string() })
       .parse(req.body);
-    return services.policy.cancel({ policyId: id(req), effectiveFrom });
+    return services(req).policy.cancel({ policyId: id(req), effectiveFrom });
   });
 
   app.get("/policies/:id", async (req) => {
+    const { policy } = services(req);
     const policyId = id(req);
     const { asOf, systemAsOf } = req.query as {
       asOf?: string;
       systemAsOf?: string;
     };
     if (asOf) {
-      const snapshot = await services.policy.getAsOf(policyId, asOf, systemAsOf);
+      const snapshot = await policy.getAsOf(policyId, asOf, systemAsOf);
       if (!snapshot) {
         throw new ServiceError("no slice in effect on that date", "NOT_FOUND");
       }
       return snapshot;
     }
-    return services.policy.get(policyId);
+    return policy.get(policyId);
   });
 
   // ── billing ──────────────────────────────────────────────────────────────
   app.post("/policies/:id/payments", async (req) =>
-    services.billing.recordPayment({
+    services(req).billing.recordPayment({
       policyId: id(req),
       ...paymentSchema.parse(req.body),
     }),
   );
 
   app.get("/policies/:id/billing", async (req) =>
-    services.billing.statement(id(req)),
+    services(req).billing.statement(id(req)),
   );
 
   // ── claims ────────────────────────────────────────────────────────────────
   app.post("/policies/:id/claims", async (req, reply) => {
-    const claim = await services.claims.fnol({
+    const claim = await services(req).claims.fnol({
       policyId: id(req),
       ...fnolSchema.parse(req.body),
     });
@@ -145,38 +166,38 @@ export function buildServer(services: Services): FastifyInstance {
   });
 
   app.post("/claims/:id/reserve", async (req) =>
-    services.claims.setReserve({
+    services(req).claims.setReserve({
       claimId: id(req),
       ...amountSchema.parse(req.body),
     }),
   );
 
   app.post("/claims/:id/settle", async (req) =>
-    services.claims.settle({
+    services(req).claims.settle({
       claimId: id(req),
       ...amountSchema.parse(req.body),
     }),
   );
 
-  app.get("/claims/:id", async (req) => services.claims.get(id(req)));
+  app.get("/claims/:id", async (req) => services(req).claims.get(id(req)));
 
   // ── documents & reporting ─────────────────────────────────────────────────
   app.get("/policies/:id/documents", async (req) =>
-    services.documents.availableForms(id(req)),
+    services(req).documents.availableForms(id(req)),
   );
 
   app.get("/policies/:id/documents/schedule", async (req, reply) => {
-    const html = await services.documents.schedule(id(req));
+    const html = await services(req).documents.schedule(id(req));
     return reply.type("text/html; charset=utf-8").send(html);
   });
 
   app.get("/policies/:id/documents/certificate", async (req, reply) => {
-    const html = await services.documents.certificate(id(req));
+    const html = await services(req).documents.certificate(id(req));
     return reply.type("text/html; charset=utf-8").send(html);
   });
 
-  app.get("/reports/premium-register", async (_req, reply) => {
-    const csv = await services.documents.premiumRegisterCsv();
+  app.get("/reports/premium-register", async (req, reply) => {
+    const csv = await services(req).documents.premiumRegisterCsv();
     return reply.type("text/csv; charset=utf-8").send(csv);
   });
 

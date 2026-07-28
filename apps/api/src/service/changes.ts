@@ -1,4 +1,4 @@
-import type { MotorRisk, RiskChange } from "./types.js";
+import type { MotorRisk, RiskChange } from "@pc-core/ports";
 
 /** Apply a stored endorsement delta to a risk, returning a new risk (pure). */
 export function applyChange(risk: MotorRisk, change: RiskChange): MotorRisk {

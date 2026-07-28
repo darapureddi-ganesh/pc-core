@@ -1,0 +1,76 @@
+import type {
+  BillingAccount,
+  BillingRepository,
+  Claim,
+  ClaimsRepository,
+  PolicyAggregate,
+  PolicyRepository,
+} from "@pc-core/ports";
+
+/**
+ * The reference adapter every connector is measured against: what pc-core's
+ * own demo tenant uses. A real connector swaps these for something backed by
+ * a company's actual database, but the shape — create/get/save(/list) — is
+ * exactly this.
+ */
+export class InMemoryPolicyRepository implements PolicyRepository {
+  private readonly store = new Map<string, PolicyAggregate>();
+  private seq = 0;
+
+  constructor(private readonly numberPrefix = "PC-2026") {}
+
+  async create(policy: PolicyAggregate): Promise<void> {
+    this.store.set(policy.policyId, structuredClone(policy));
+  }
+
+  async get(policyId: string): Promise<PolicyAggregate | undefined> {
+    const found = this.store.get(policyId);
+    return found ? structuredClone(found) : undefined;
+  }
+
+  async save(policy: PolicyAggregate): Promise<void> {
+    this.store.set(policy.policyId, structuredClone(policy));
+  }
+
+  async list(): Promise<PolicyAggregate[]> {
+    return [...this.store.values()].map((p) => structuredClone(p));
+  }
+
+  async nextPolicyNumber(): Promise<string> {
+    this.seq += 1;
+    return `${this.numberPrefix}-${String(this.seq).padStart(6, "0")}`;
+  }
+}
+
+export class InMemoryBillingRepository implements BillingRepository {
+  private readonly store = new Map<string, BillingAccount>();
+
+  async create(account: BillingAccount): Promise<void> {
+    this.store.set(account.policyId, structuredClone(account));
+  }
+  async get(policyId: string): Promise<BillingAccount | undefined> {
+    const found = this.store.get(policyId);
+    return found ? structuredClone(found) : undefined;
+  }
+  async save(account: BillingAccount): Promise<void> {
+    this.store.set(account.policyId, structuredClone(account));
+  }
+}
+
+export class InMemoryClaimsRepository implements ClaimsRepository {
+  private readonly store = new Map<string, Claim>();
+
+  async create(claim: Claim): Promise<void> {
+    this.store.set(claim.claimId, structuredClone(claim));
+  }
+  async get(claimId: string): Promise<Claim | undefined> {
+    const found = this.store.get(claimId);
+    return found ? structuredClone(found) : undefined;
+  }
+  async save(claim: Claim): Promise<void> {
+    this.store.set(claim.claimId, structuredClone(claim));
+  }
+  async list(): Promise<Claim[]> {
+    return [...this.store.values()].map((c) => structuredClone(c));
+  }
+}

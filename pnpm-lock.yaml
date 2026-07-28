@@ -35,9 +35,15 @@ importers:
 
   apps/api:
     dependencies:
+      '@pc-core/adapters':
+        specifier: workspace:*
+        version: link:../../packages/adapters
       '@pc-core/billing':
         specifier: workspace:*
         version: link:../../packages/billing
+      '@pc-core/claims-ai':
+        specifier: workspace:*
+        version: link:../../packages/claims-ai
       '@pc-core/config-engine':
         specifier: workspace:*
         version: link:../../packages/config-engine
@@ -47,6 +53,9 @@ importers:
       '@pc-core/forms':
         specifier: workspace:*
         version: link:../../packages/forms
+      '@pc-core/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
       '@pc-core/products':
         specifier: workspace:*
         version: link:../../packages/products
@@ -56,6 +65,15 @@ importers:
       zod:
         specifier: ^3.24.1
         version: 3.25.76
+
+  apps/mock-insurer:
+    dependencies:
+      '@pc-core/ports':
+        specifier: workspace:*
+        version: link:../../packages/ports
+      fastify:
+        specifier: ^5.1.0
+        version: 5.10.0
 
   apps/web:
     dependencies:
@@ -76,7 +94,19 @@ importers:
         specifier: ^19.0.3
         version: 19.2.3(@types/react@19.2.17)
 
+  packages/adapters:
+    dependencies:
+      '@pc-core/ports':
+        specifier: workspace:*
+        version: link:../ports
+    devDependencies:
+      fastify:
+        specifier: ^5.1.0
+        version: 5.10.0
+
   packages/billing: {}
+
+  packages/claims-ai: {}
 
   packages/config-engine:
     dependencies:
@@ -103,6 +133,18 @@ importers:
   packages/domain: {}
 
   packages/forms: {}
+
+  packages/ports:
+    dependencies:
+      '@pc-core/billing':
+        specifier: workspace:*
+        version: link:../billing
+      '@pc-core/config-engine':
+        specifier: workspace:*
+        version: link:../config-engine
+      '@pc-core/domain':
+        specifier: workspace:*
+        version: link:../domain
 
   packages/products: {}
 

@@ -47,3 +47,18 @@ export interface PolicySnapshot {
   risk: MotorRisk;
   rating: RatingResult;
 }
+
+/**
+ * The policy storage contract — this is the part of the "Connector SDK" a
+ * connected company implements against their own database or system. Every
+ * PolicyService method reaches storage only through this interface, so any
+ * adapter that satisfies it — in-process, or over HTTP against a remote
+ * system — works with the full lifecycle unchanged.
+ */
+export interface PolicyRepository {
+  create(policy: PolicyAggregate): Promise<void>;
+  get(policyId: string): Promise<PolicyAggregate | undefined>;
+  save(policy: PolicyAggregate): Promise<void>;
+  list(): Promise<PolicyAggregate[]>;
+  nextPolicyNumber(): Promise<string>;
+}

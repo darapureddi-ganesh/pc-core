@@ -1,12 +1,42 @@
 import { randomUUID } from "node:crypto";
+import {
+  extractClaimFields,
+  scoreFraudRisk,
+  type ExtractedFields,
+} from "@pc-core/claims-ai";
+import type { Claim, ClaimsRepository } from "@pc-core/ports";
 import { ServiceError } from "./errors.js";
 import type { PolicyService } from "./policy-service.js";
-import type { Claim, ClaimsRepository } from "./claims-repository.js";
+
+const MS_PER_DAY = 24 * 60 * 60 * 1000;
+
+/** Whole days between two ISO (YYYY-MM-DD) dates, `to` − `from`. */
+function daysBetween(from: string, to: string): number {
+  return Math.round(
+    (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
+      MS_PER_DAY,
+  );
+}
+
+/** Flatten the IDP extractor's typed output into the port's generic string map. */
+function toFlatFields(fields: ExtractedFields): Record<string, string> {
+  const flat: Record<string, string> = {};
+  if (fields.registrationNo) flat.registrationNo = fields.registrationNo;
+  if (fields.policyNumber) flat.policyNumber = fields.policyNumber;
+  if (fields.amount) flat.amount = fields.amount;
+  if (fields.dates.length) flat.dates = fields.dates.join(", ");
+  return flat;
+}
 
 /**
  * Claims, anchored to the temporal policy model. First-notice-of-loss looks up
  * the policy as-of the INCIDENT date, so the cover (and sum insured) applied to
  * a claim is exactly what was in force then — even across mid-term endorsements.
+ *
+ * FNOL also runs the claims-AI pillars: IDP extraction over any raw intake
+ * text, and a fraud-risk score against this tenant's own claim history — both
+ * pure functions operating only through the ClaimsRepository port, so they run
+ * identically for the demo tenant or a connected company's own system.
  */
 export class ClaimsService {
   constructor(
@@ -18,6 +48,8 @@ export class ClaimsService {
     policyId: string;
     incidentDate: string;
     cause: string;
+    /** free-text FNOL note / OCR'd document text, run through IDP extraction */
+    rawIntakeText?: string;
   }): Promise<Claim> {
     const policy = await this.policies.get(cmd.policyId); // throws NOT_FOUND
     if (policy.status !== "ISSUED") {
@@ -35,6 +67,14 @@ export class ClaimsService {
       );
     }
 
+    const priorClaimsOnPolicy = (await this.repo.list()).filter(
+      (c) => c.policyId === cmd.policyId,
+    ).length;
+    const { score, signals } = scoreFraudRisk({
+      priorClaimsOnPolicy,
+      daysSincePolicyStart: daysBetween(policy.term.from, cmd.incidentDate),
+    });
+
     const claim: Claim = {
       claimId: randomUUID(),
       policyId: cmd.policyId,
@@ -45,6 +85,11 @@ export class ClaimsService {
       sumInsured: snapshot.rating.sumInsured,
       reserveAmount: 0,
       settledAmount: 0,
+      ...(cmd.rawIntakeText && {
+        extractedFields: toFlatFields(extractClaimFields(cmd.rawIntakeText)),
+      }),
+      fraudScore: score,
+      fraudSignals: signals,
     };
     await this.repo.create(claim);
     return claim;

@@ -1,6 +1,6 @@
 import { describe, it, expect, beforeEach } from "vitest";
 import { BillingService } from "../src/service/billing-service.js";
-import { InMemoryBillingRepository } from "../src/service/billing-repository.js";
+import { InMemoryBillingRepository } from "@pc-core/adapters";
 
 let billing: BillingService;
 beforeEach(() => {

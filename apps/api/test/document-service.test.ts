@@ -3,7 +3,7 @@ import {
   PolicyService,
   type QuoteCommand,
 } from "../src/service/policy-service.js";
-import { InMemoryPolicyRepository } from "../src/service/repository.js";
+import { InMemoryPolicyRepository } from "@pc-core/adapters";
 import { DocumentService } from "../src/service/document-service.js";
 
 const quoteCmd: QuoteCommand = {
