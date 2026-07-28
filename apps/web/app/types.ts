@@ -54,3 +54,66 @@ export interface BillingStatement {
   outstanding: number;
   installments: Installment[];
 }
+
+export interface Claim {
+  claimId: string;
+  policyId: string;
+  policyNumber: string | null;
+  incidentDate: string;
+  cause: string;
+  status: string;
+  sumInsured: number;
+  reserveAmount: number;
+  settledAmount: number;
+  fraudScore?: number;
+  fraudSignals?: string[];
+  claimType?: string;
+  priority?: string;
+  complexity?: string;
+  predictedHandlingDays?: number;
+  slaDeadline?: string;
+  slaRiskScore?: number;
+  slaBreached?: boolean;
+  classificationRuleApplied?: string | null;
+  assignedHandlerId?: string;
+}
+
+export interface ClassifyResult {
+  claim: Claim;
+  baselinePriority?: string;
+  baselineClaimType?: string;
+  ruleApplied: string | null;
+}
+
+export interface HandlerScore {
+  handlerId: string;
+  name: string;
+  score: number;
+  expertiseMatch: number;
+  workloadFactor: number;
+  speedFactor: number;
+  availability: boolean;
+}
+
+export interface AssignResult {
+  claim: Claim;
+  recommended: HandlerScore;
+  candidates: HandlerScore[];
+}
+
+export interface HandlerWorkload {
+  handlerId: string;
+  name: string;
+  currentWorkload: number;
+  maxCapacity: number;
+  utilizationRatio: number;
+}
+
+export interface QueueStatus {
+  totalPending: number;
+  totalAssigned: number;
+  slaBreachAlerts: number;
+  avgSlaRisk: number;
+  pendingClaims: Claim[];
+  handlerWorkloads: HandlerWorkload[];
+}

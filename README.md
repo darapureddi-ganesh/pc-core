@@ -147,6 +147,13 @@ The portal reads `API_URL` server-side (default `http://127.0.0.1:3000` — IPv4
 on purpose, since `localhost` can resolve to IPv6 on Windows and miss the API)
 and links to documents via the client-visible `API_PUBLIC_BASE` in `app/config.ts`.
 
+Once a policy is issued, the same page lets you file a claim (FNOL), classify
+it, and auto-assign it to a handler — the pipeline trace (baseline vs.
+company-rule override) and the ranked candidate list are shown inline. A
+second route, **Claims queue** (`app/claims/page.tsx`), is an ops dashboard
+over `GET /claims/queue/status`: pending/assigned counts, SLA-breach alerts,
+and live handler workload.
+
 ## Billing & claims (P5)
 
 Issuing a policy auto-creates a premium **invoice** on a double-entry ledger
@@ -271,6 +278,6 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 
 - **richer rating** — pro-rated endorsement premium, renewal terms
 - **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
-- **portal** — surface claims (FNOL) and tenant switching in the agent portal alongside billing and documents
+- **portal** — claims (FNOL) and the claim queue now surface in the agent portal (see "Agent portal (P4)"); tenant switching in the UI is still open
 
 See the design note and build plan for the full picture.

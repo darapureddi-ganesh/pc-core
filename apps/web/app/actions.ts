@@ -1,6 +1,15 @@
 "use server";
 
-import type { BillingStatement, Policy, QuoteInput, QuoteResult } from "./types";
+import type {
+  AssignResult,
+  BillingStatement,
+  ClassifyResult,
+  Claim,
+  Policy,
+  QueueStatus,
+  QuoteInput,
+  QuoteResult,
+} from "./types";
 
 // Default to IPv4 explicitly: on Windows, "localhost" can resolve to IPv6 (::1)
 // and miss a server bound only on 127.0.0.1.
@@ -75,6 +84,60 @@ export async function payOutstanding(
     body: JSON.stringify({ amount, date: new Date().toISOString().slice(0, 10) }),
     cache: "no-store",
   });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function fileClaim(
+  policyId: string,
+  cmd: { incidentDate: string; cause: string },
+): Promise<Claim> {
+  const res = await fetch(`${API}/policies/${policyId}/claims`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(cmd),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function classifyClaim(claimId: string): Promise<ClassifyResult> {
+  const res = await fetch(`${API}/claims/${claimId}/classify`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({}),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function assignClaim(claimId: string): Promise<AssignResult> {
+  const res = await fetch(`${API}/claims/${claimId}/assign`, {
+    method: "POST",
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function overrideClaim(
+  claimId: string,
+  cmd: { handlerId: string; reason: string; overrideBy: string },
+): Promise<Claim> {
+  const res = await fetch(`${API}/claims/${claimId}/override`, {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify(cmd),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function getQueueStatus(): Promise<QueueStatus> {
+  const res = await fetch(`${API}/claims/queue/status`, { cache: "no-store" });
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }

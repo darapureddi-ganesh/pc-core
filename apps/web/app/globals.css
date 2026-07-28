@@ -81,6 +81,19 @@ body {
   text-transform: uppercase;
   color: var(--accent-ink);
 }
+.nav {
+  display: flex;
+  gap: 1.1rem;
+}
+.nav a {
+  font-size: 0.86rem;
+  font-weight: 600;
+  color: var(--ink-2);
+  text-decoration: none;
+}
+.nav a:hover {
+  color: var(--accent-ink);
+}
 
 .wrap {
   max-width: 1060px;
@@ -346,4 +359,159 @@ table.breakdown .lbl {
   color: var(--good);
   font-weight: 600;
   font-size: 0.86rem;
+}
+
+/* ── Claims / claim queue ─────────────────────────────────────────── */
+
+.claim-block {
+  margin-top: 0.9rem;
+  padding-top: 0.9rem;
+  border-top: 1px dashed var(--line-strong);
+}
+
+.pill {
+  display: inline-block;
+  font-family: var(--mono);
+  font-size: 0.7rem;
+  font-weight: 700;
+  letter-spacing: 0.04em;
+  text-transform: uppercase;
+  padding: 0.18rem 0.5rem;
+  border-radius: 3px;
+  border: 1px solid var(--line-strong);
+  color: var(--ink-2);
+}
+.pill.priority-low {
+  color: var(--good);
+  border-color: color-mix(in srgb, var(--good) 40%, var(--line));
+}
+.pill.priority-medium {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+}
+.pill.priority-high,
+.pill.priority-critical {
+  color: var(--crit);
+  border-color: color-mix(in srgb, var(--crit) 50%, var(--line));
+  background: color-mix(in srgb, var(--crit) 10%, var(--surface));
+}
+.pill.sla-breached {
+  color: var(--crit);
+  border-color: color-mix(in srgb, var(--crit) 50%, var(--line));
+}
+
+.trace {
+  font-family: var(--mono);
+  font-size: 0.78rem;
+  color: var(--ink-3);
+  margin: 0.5rem 0;
+}
+.trace strong {
+  color: var(--ink-2);
+}
+
+.candidates {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.84rem;
+  margin: 0.6rem 0;
+}
+.candidates th {
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  font-weight: 600;
+  padding: 0.3rem 0.4rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+.candidates td {
+  padding: 0.35rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  font-variant-numeric: tabular-nums;
+}
+.candidates tr.picked td {
+  font-weight: 700;
+  color: var(--good);
+}
+.candidates tr.unavailable td {
+  color: var(--ink-3);
+}
+
+.queue-summary {
+  display: grid;
+  grid-template-columns: repeat(4, 1fr);
+  gap: 0.8rem;
+  margin-bottom: 1.2rem;
+}
+.stat {
+  border: 1px solid var(--line);
+  border-radius: 6px;
+  padding: 0.8rem 0.9rem;
+  background: var(--surface-2);
+}
+.stat .n {
+  font-family: var(--mono);
+  font-size: 1.4rem;
+  font-weight: 700;
+}
+.stat.crit .n {
+  color: var(--crit);
+}
+.stat .lbl {
+  font-size: 0.72rem;
+  color: var(--ink-3);
+  text-transform: uppercase;
+  letter-spacing: 0.05em;
+}
+
+.queue-table {
+  width: 100%;
+  border-collapse: collapse;
+  font-size: 0.86rem;
+}
+.queue-table th {
+  text-align: left;
+  font-size: 0.68rem;
+  text-transform: uppercase;
+  letter-spacing: 0.06em;
+  color: var(--ink-3);
+  font-weight: 600;
+  padding: 0.4rem;
+  border-bottom: 1px solid var(--line-strong);
+}
+.queue-table td {
+  padding: 0.5rem 0.4rem;
+  border-bottom: 1px solid var(--line);
+  vertical-align: middle;
+}
+
+.workload-bar {
+  width: 100%;
+  height: 6px;
+  background: var(--inset);
+  border-radius: 3px;
+  overflow: hidden;
+}
+.workload-bar .fill {
+  height: 100%;
+  background: var(--accent);
+}
+
+button.secondary {
+  font-family: var(--sans);
+  font-size: 0.84rem;
+  font-weight: 600;
+  color: var(--accent-ink);
+  background: transparent;
+  border: 1px solid var(--accent);
+  border-radius: 5px;
+  padding: 0.4rem 0.75rem;
+  cursor: pointer;
+}
+button.secondary:disabled {
+  opacity: 0.5;
+  cursor: default;
 }
