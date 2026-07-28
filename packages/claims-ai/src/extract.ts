@@ -19,7 +19,7 @@ export interface ExtractedFields {
 
 // e.g. KA01AB1234, KA-01-AB-1234, MH 12 XY 5678
 const REGISTRATION_RE = /\b[A-Z]{2}[\s-]?\d{1,2}[\s-]?[A-Z]{1,3}[\s-]?\d{4}\b/;
-// e.g. PC-2026-000001, ACME-2026-000001
+// e.g. PC-2026-000001, BETA-2026-000001
 const POLICY_NO_RE = /\b[A-Z]{2,8}-\d{3,4}-\d{5,6}\b/;
 // e.g. ₹6,00,000  Rs. 21642.38  INR 3416
 const AMOUNT_RE = /(?:₹|Rs\.?|INR)\s?[\d,]+(?:\.\d{1,2})?/i;

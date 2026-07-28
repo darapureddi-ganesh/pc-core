@@ -33,7 +33,7 @@ function buildFakeInsurerServer(): FastifyInstance {
   app.get("/policies", async () => [...store.values()]);
   app.post("/policies/next-number", async () => {
     seq += 1;
-    return { policyNumber: `ACME-${String(seq).padStart(5, "0")}` };
+    return { policyNumber: `BETA-${String(seq).padStart(5, "0")}` };
   });
 
   return app;
@@ -87,6 +87,6 @@ describe("RemoteHttpPolicyRepository — adapting an external system over HTTP",
     expect(listed).toHaveLength(1);
 
     const num = await repo.nextPolicyNumber();
-    expect(num).toBe("ACME-00001");
+    expect(num).toBe("BETA-00001");
   });
 });

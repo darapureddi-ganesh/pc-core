@@ -29,6 +29,7 @@ export default async function RootLayout({ children }: { children: ReactNode }) 
                 <nav className="nav">
                   <Link href="/">Quote &amp; issue</Link>
                   <Link href="/claims">Claims queue</Link>
+                  <Link href="/connectors">Connectors</Link>
                 </nav>
                 <TenantSwitcher tenants={tenants} current={currentTenant} />
                 <form action={logout}>

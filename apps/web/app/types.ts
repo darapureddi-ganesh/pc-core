@@ -115,6 +115,10 @@ export interface TenantInfo {
   name: string;
 }
 
+export interface ConnectorRegistration extends TenantInfo {
+  apiKey: string;
+}
+
 export interface QueueStatus {
   totalPending: number;
   totalAssigned: number;
