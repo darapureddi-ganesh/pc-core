@@ -13,6 +13,11 @@ import {
   RemoteHttpPolicyRepository,
 } from "@pc-core/adapters";
 import { createDb, type Db } from "@pc-core/db/client";
+import {
+  LlmDocumentExtractor,
+  OllamaLlmClient,
+  type OllamaClientOptions,
+} from "@pc-core/claims-ai";
 import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
 import { PolicyService } from "./service/policy-service.js";
@@ -160,11 +165,28 @@ export class TenantRegistry {
    * Self-serve onboarding: a company points us at a REST service implementing
    * the policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository)
    * and gets back a tenant ID + API key. No code changes on pc-core's side.
+   *
+   * Optionally also points claims-AI's IDP extraction at a self-hosted Ollama
+   * model for this tenant (see @pc-core/claims-ai's OllamaLlmClient) instead
+   * of the default regex extractor — pc-core ships no hosted model of its
+   * own, so this is how a company brings their own.
    */
-  registerConnector(name: string, policyBaseUrl: string): TenantInfo & { apiKey: string } {
+  registerConnector(
+    name: string,
+    policyBaseUrl: string,
+    ollama?: OllamaClientOptions,
+  ): TenantInfo & { apiKey: string } {
     const info: TenantInfo = { tenantId: newTenantId(name), name };
     const apiKey = newApiKey();
-    this.register(info, { policy: new RemoteHttpPolicyRepository(policyBaseUrl) }, apiKey);
+    const claimsAi: ClaimsAiProviders | undefined = ollama
+      ? { extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)) }
+      : undefined;
+    this.register(
+      info,
+      { policy: new RemoteHttpPolicyRepository(policyBaseUrl) },
+      apiKey,
+      claimsAi,
+    );
     return { ...info, apiKey };
   }
 

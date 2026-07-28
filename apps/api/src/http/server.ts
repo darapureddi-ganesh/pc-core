@@ -57,6 +57,10 @@ const overrideSchema = z.object({
 const registerConnectorSchema = z.object({
   name: z.string().min(1),
   policyBaseUrl: z.string().url(),
+  /** optional: point claims-AI's IDP extractor at a self-hosted Ollama model
+   * for this tenant, instead of the default regex extractor */
+  ollamaModel: z.string().optional(),
+  ollamaBaseUrl: z.string().url().optional(),
 });
 
 const DEFAULT_TENANT = "demo";
@@ -113,8 +117,13 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   // policy connector contract and get back a tenant ID + API key. No code
   // change or redeploy on pc-core's side — this is the "connect my system" door.
   app.post("/connectors/register", async (req, reply) => {
-    const { name, policyBaseUrl } = registerConnectorSchema.parse(req.body);
-    const tenant = registry.registerConnector(name, policyBaseUrl);
+    const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl } =
+      registerConnectorSchema.parse(req.body);
+    const tenant = registry.registerConnector(
+      name,
+      policyBaseUrl,
+      ollamaModel ? { model: ollamaModel, baseUrl: ollamaBaseUrl } : undefined,
+    );
     return reply.status(201).send(tenant);
   });
 
