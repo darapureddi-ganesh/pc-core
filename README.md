@@ -147,12 +147,15 @@ The portal reads `API_URL` server-side (default `http://127.0.0.1:3000` — IPv4
 on purpose, since `localhost` can resolve to IPv6 on Windows and miss the API)
 and links to documents via the client-visible `API_PUBLIC_BASE` in `app/config.ts`.
 
-Once a policy is issued, the same page lets you file a claim (FNOL), classify
-it, and auto-assign it to a handler — the pipeline trace (baseline vs.
-company-rule override) and the ranked candidate list are shown inline. A
-second route, **Claims queue** (`app/claims/page.tsx`), is an ops dashboard
-over `GET /claims/queue/status`: pending/assigned counts, SLA-breach alerts,
-and live handler workload.
+Once a policy is issued, the same page lets you file a claim (FNOL) — with an
+optional free-text intake note — classify it, and auto-assign it to a
+handler. The claims-AI pillars run automatically on that FNOL call and are
+shown inline: the IDP extractor's fields pulled from the intake note, the
+fraud score with its actual signal text, and the classification pipeline
+trace (baseline vs. company-rule override) plus the ranked handler
+candidates. A second route, **Claims queue** (`app/claims/page.tsx`), is an
+ops dashboard over `GET /claims/queue/status`: pending/assigned counts,
+SLA-breach alerts, and live handler workload.
 
 ## Billing & claims (P5)
 

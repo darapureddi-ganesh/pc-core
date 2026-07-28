@@ -90,7 +90,7 @@ export async function payOutstanding(
 
 export async function fileClaim(
   policyId: string,
-  cmd: { incidentDate: string; cause: string },
+  cmd: { incidentDate: string; cause: string; rawIntakeText?: string },
 ): Promise<Claim> {
   const res = await fetch(`${API}/policies/${policyId}/claims`, {
     method: "POST",

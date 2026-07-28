@@ -410,6 +410,14 @@ table.breakdown .lbl {
 .trace strong {
   color: var(--ink-2);
 }
+.trace strong.fraud-flag {
+  color: var(--crit);
+}
+.fraud-signals {
+  margin: 0.3rem 0 0;
+  padding-left: 1.1rem;
+  color: var(--ink-3);
+}
 
 .candidates {
   width: 100%;

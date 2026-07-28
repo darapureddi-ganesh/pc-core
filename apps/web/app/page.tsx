@@ -65,6 +65,9 @@ export default function Page() {
 
   const [incidentDate, setIncidentDate] = useState("2026-03-01");
   const [cause, setCause] = useState("collision, minor front-end damage");
+  const [rawIntakeText, setRawIntakeText] = useState(
+    `Vehicle ${registrationNo} hit on 2026-03-01, repair estimate ₹45,000.`,
+  );
   const [claim, setClaim] = useState<Claim | null>(null);
   const [ruleApplied, setRuleApplied] = useState<string | null>(null);
   const [assignResult, setAssignResult] = useState<AssignResult | null>(null);
@@ -138,7 +141,13 @@ export default function Page() {
     e.preventDefault();
     quote &&
       run(async () => {
-        setClaim(await fileClaim(quote.policyId, { incidentDate, cause }));
+        setClaim(
+          await fileClaim(quote.policyId, {
+            incidentDate,
+            cause,
+            rawIntakeText: rawIntakeText || undefined,
+          }),
+        );
         setRuleApplied(null);
         setAssignResult(null);
       });
@@ -454,6 +463,17 @@ export default function Page() {
                             />
                           </div>
                         </div>
+                        <div className="field">
+                          <label htmlFor="rawIntakeText">
+                            Intake note (optional — IDP extracts fields, feeds fraud scoring)
+                          </label>
+                          <input
+                            id="rawIntakeText"
+                            type="text"
+                            value={rawIntakeText}
+                            onChange={(e) => setRawIntakeText(e.target.value)}
+                          />
+                        </div>
                         <button className="secondary" type="submit" disabled={busy}>
                           {busy ? "Filing…" : "File a claim (FNOL)"}
                         </button>
@@ -488,6 +508,38 @@ export default function Page() {
                             {ruleApplied && <div>rule applied: {ruleApplied}</div>}
                           </div>
                         )}
+
+                        {claim.fraudScore !== undefined && (
+                          <div className="trace">
+                            fraud risk:{" "}
+                            <strong
+                              className={claim.fraudScore > 0 ? "fraud-flag" : undefined}
+                            >
+                              {(claim.fraudScore * 100).toFixed(0)}%
+                            </strong>
+                            {claim.fraudSignals && claim.fraudSignals.length > 0 && (
+                              <ul className="fraud-signals">
+                                {claim.fraudSignals.map((s) => (
+                                  <li key={s}>{s}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+
+                        {claim.extractedFields &&
+                          Object.keys(claim.extractedFields).length > 0 && (
+                            <div className="trace">
+                              extracted from intake note:
+                              <ul className="fraud-signals">
+                                {Object.entries(claim.extractedFields).map(([k, v]) => (
+                                  <li key={k}>
+                                    {k}: {v}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
 
                         <div className="actionbtns">
                           {!claim.claimType && (

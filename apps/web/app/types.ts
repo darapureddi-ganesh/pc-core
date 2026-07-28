@@ -67,6 +67,7 @@ export interface Claim {
   settledAmount: number;
   fraudScore?: number;
   fraudSignals?: string[];
+  extractedFields?: Record<string, string>;
   claimType?: string;
   priority?: string;
   complexity?: string;
