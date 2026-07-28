@@ -110,6 +110,11 @@ export interface HandlerWorkload {
   utilizationRatio: number;
 }
 
+export interface TenantInfo {
+  tenantId: string;
+  name: string;
+}
+
 export interface QueueStatus {
   totalPending: number;
   totalAssigned: number;

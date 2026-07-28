@@ -18,11 +18,13 @@ pnpm install
 pnpm dev
 ```
 
-Then open **http://localhost:3001** and click through the whole lifecycle:
-enter a vehicle, get a config-driven quote, bind, issue — the portal then
-auto-invoices the premium, lets you pay it off, and links straight to the
-generated **policy schedule** and **Form 51 certificate**. Every number and
-every document field traces back to `packages/products/private_car.2026.1.yaml`.
+Then open **http://localhost:3001**, sign in with the demo password
+(`pc-core-demo`, see "Portal login + tenant switching" below), and click
+through the whole lifecycle: enter a vehicle, get a config-driven quote,
+bind, issue — the portal then auto-invoices the premium, lets you pay it
+off, and links straight to the generated **policy schedule** and
+**Form 51 certificate**. Every number and every document field traces back
+to `packages/products/private_car.2026.1.yaml`.
 
 (`pnpm demo` runs a separate, non-interactive CLI walkthrough of the rating
 engine and the temporal timeline — no servers needed.)
@@ -157,6 +159,28 @@ candidates. A second route, **Claims queue** (`app/claims/page.tsx`), is an
 ops dashboard over `GET /claims/queue/status`: pending/assigned counts,
 SLA-breach alerts, and live handler workload.
 
+### Portal login + tenant switching
+
+The whole portal sits behind a demo-grade login (`middleware.ts` + `lib/auth.ts`)
+— one shared password gates an HMAC-signed session cookie. This is **not**
+tenant-level authorization (the API already does that per-connector via
+`Authorization: Bearer <apiKey>`); it's just a login screen so the portal
+isn't wide open to anyone with the URL.
+
+```bash
+PORTAL_PASSWORD=your-password       # default: pc-core-demo
+PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
+```
+
+A tenant switcher in the header (`app/tenant-switcher.tsx`) lists every
+registered tenant (`GET /tenants`) and lets you flip between them — every
+server action then sends `X-Tenant-Id` for whichever tenant is selected
+(`app/tenant-actions.ts`), the same unauthenticated convenience header the
+API offers for local demos. Switching to `acme` only resolves if
+`apps/mock-insurer` is actually running (`pnpm platform` instead of `pnpm dev`)
+— otherwise you'll correctly see a real connection error, proving the tenant
+data really is routed to a different backend, not just relabeled.
+
 ## Billing & claims (P5)
 
 Issuing a policy auto-creates a premium **invoice** on a double-entry ledger
@@ -281,6 +305,7 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 
 - **richer rating** — pro-rated endorsement premium, renewal terms
 - **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
-- **portal** — claims (FNOL) and the claim queue now surface in the agent portal (see "Agent portal (P4)"); tenant switching in the UI is still open
+- **portal** — claims (FNOL), the claim queue, a login screen, and tenant switching now all surface in the agent portal (see "Agent portal (P4)")
+- **CI** — GitHub Actions now runs typecheck + tests + the portal build on every push/PR (`.github/workflows/ci.yml`)
 
 See the design note and build plan for the full picture.
