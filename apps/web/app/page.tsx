@@ -2,14 +2,23 @@
 
 import { useState } from "react";
 import {
+  assignClaim,
   bindPolicy,
+  classifyClaim,
+  fileClaim,
   getBillingStatement,
   issuePolicy,
   payOutstanding,
   quotePolicy,
 } from "./actions";
 import { API_PUBLIC_BASE } from "./config";
-import type { BillingStatement, Policy, QuoteResult } from "./types";
+import type {
+  AssignResult,
+  BillingStatement,
+  Claim,
+  Policy,
+  QuoteResult,
+} from "./types";
 
 const ADDONS: Array<{ code: string; label: string }> = [
   { code: "ZERO_DEP", label: "Zero Dep" },
@@ -54,6 +63,15 @@ export default function Page() {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
 
+  const [incidentDate, setIncidentDate] = useState("2026-03-01");
+  const [cause, setCause] = useState("collision, minor front-end damage");
+  const [rawIntakeText, setRawIntakeText] = useState(
+    `Vehicle ${registrationNo} hit on 2026-03-01, repair estimate ₹45,000.`,
+  );
+  const [claim, setClaim] = useState<Claim | null>(null);
+  const [ruleApplied, setRuleApplied] = useState<string | null>(null);
+  const [assignResult, setAssignResult] = useState<AssignResult | null>(null);
+
   const phase: "idle" | "quoted" | "bound" | "issued" =
     policy?.status === "ISSUED"
       ? "issued"
@@ -95,6 +113,9 @@ export default function Page() {
       setQuote(result);
       setPolicy(null);
       setBilling(null);
+      setClaim(null);
+      setRuleApplied(null);
+      setAssignResult(null);
     });
   };
 
@@ -114,6 +135,38 @@ export default function Page() {
     billing &&
     run(async () => {
       setBilling(await payOutstanding(quote.policyId, billing.outstanding));
+    });
+
+  const onFileClaim = (e: React.FormEvent) => {
+    e.preventDefault();
+    quote &&
+      run(async () => {
+        setClaim(
+          await fileClaim(quote.policyId, {
+            incidentDate,
+            cause,
+            rawIntakeText: rawIntakeText || undefined,
+          }),
+        );
+        setRuleApplied(null);
+        setAssignResult(null);
+      });
+  };
+
+  const onClassify = () =>
+    claim &&
+    run(async () => {
+      const result = await classifyClaim(claim.claimId);
+      setClaim(result.claim);
+      setRuleApplied(result.ruleApplied);
+    });
+
+  const onAssign = () =>
+    claim &&
+    run(async () => {
+      const result = await assignClaim(claim.claimId);
+      setClaim(result.claim);
+      setAssignResult(result);
     });
 
   return (
@@ -386,6 +439,153 @@ export default function Page() {
                       )}
                     </div>
                   )}
+
+                  <div className="claim-block">
+                    {!claim ? (
+                      <form onSubmit={onFileClaim}>
+                        <div className="row">
+                          <div className="field">
+                            <label htmlFor="incidentDate">Incident date</label>
+                            <input
+                              id="incidentDate"
+                              type="date"
+                              value={incidentDate}
+                              onChange={(e) => setIncidentDate(e.target.value)}
+                            />
+                          </div>
+                          <div className="field">
+                            <label htmlFor="cause">What happened</label>
+                            <input
+                              id="cause"
+                              type="text"
+                              value={cause}
+                              onChange={(e) => setCause(e.target.value)}
+                            />
+                          </div>
+                        </div>
+                        <div className="field">
+                          <label htmlFor="rawIntakeText">
+                            Intake note (optional — IDP extracts fields, feeds fraud scoring)
+                          </label>
+                          <input
+                            id="rawIntakeText"
+                            type="text"
+                            value={rawIntakeText}
+                            onChange={(e) => setRawIntakeText(e.target.value)}
+                          />
+                        </div>
+                        <button className="secondary" type="submit" disabled={busy}>
+                          {busy ? "Filing…" : "File a claim (FNOL)"}
+                        </button>
+                      </form>
+                    ) : (
+                      <>
+                        <span className="eyebrow">Claim {claim.claimId.slice(0, 8)}</span>
+                        <div className="billing-row">
+                          <span>Cause</span>
+                          <span>{claim.cause}</span>
+                        </div>
+                        <div className="billing-row">
+                          <span>Status</span>
+                          <span>
+                            {claim.priority && (
+                              <span className={`pill priority-${claim.priority.toLowerCase()}`}>
+                                {claim.priority}
+                              </span>
+                            )}{" "}
+                            {claim.status}
+                          </span>
+                        </div>
+
+                        {claim.claimType && (
+                          <div className="trace">
+                            <strong>{claim.claimType}</strong> &middot; {claim.complexity}{" "}
+                            &middot; ~{claim.predictedHandlingDays}d handling &middot; SLA due{" "}
+                            {claim.slaDeadline}
+                            {claim.slaBreached && (
+                              <span className="pill sla-breached"> SLA breached</span>
+                            )}
+                            {ruleApplied && <div>rule applied: {ruleApplied}</div>}
+                          </div>
+                        )}
+
+                        {claim.fraudScore !== undefined && (
+                          <div className="trace">
+                            fraud risk:{" "}
+                            <strong
+                              className={claim.fraudScore > 0 ? "fraud-flag" : undefined}
+                            >
+                              {(claim.fraudScore * 100).toFixed(0)}%
+                            </strong>
+                            {claim.fraudSignals && claim.fraudSignals.length > 0 && (
+                              <ul className="fraud-signals">
+                                {claim.fraudSignals.map((s) => (
+                                  <li key={s}>{s}</li>
+                                ))}
+                              </ul>
+                            )}
+                          </div>
+                        )}
+
+                        {claim.extractedFields &&
+                          Object.keys(claim.extractedFields).length > 0 && (
+                            <div className="trace">
+                              extracted from intake note:
+                              <ul className="fraud-signals">
+                                {Object.entries(claim.extractedFields).map(([k, v]) => (
+                                  <li key={k}>
+                                    {k}: {v}
+                                  </li>
+                                ))}
+                              </ul>
+                            </div>
+                          )}
+
+                        <div className="actionbtns">
+                          {!claim.claimType && (
+                            <button className="secondary" onClick={onClassify} disabled={busy}>
+                              {busy ? "Classifying…" : "Classify claim"}
+                            </button>
+                          )}
+                          {claim.claimType && !claim.assignedHandlerId && (
+                            <button className="secondary" onClick={onAssign} disabled={busy}>
+                              {busy ? "Assigning…" : "Auto-assign to a handler"}
+                            </button>
+                          )}
+                        </div>
+
+                        {assignResult && (
+                          <table className="candidates">
+                            <thead>
+                              <tr>
+                                <th>Handler</th>
+                                <th>Score</th>
+                                <th>Available</th>
+                              </tr>
+                            </thead>
+                            <tbody>
+                              {assignResult.candidates.map((c) => (
+                                <tr
+                                  key={c.handlerId}
+                                  className={
+                                    c.handlerId === assignResult.recommended.handlerId
+                                      ? "picked"
+                                      : !c.availability
+                                        ? "unavailable"
+                                        : ""
+                                  }
+                                >
+                                  <td>{c.name}</td>
+                                  <td>{c.score.toFixed(2)}</td>
+                                  <td>{c.availability ? "yes" : "no"}</td>
+                                </tr>
+                              ))}
+                            </tbody>
+                          </table>
+                        )}
+                      </>
+                    )}
+                  </div>
                 </div>
               )}
             </div>

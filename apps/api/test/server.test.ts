@@ -138,6 +138,26 @@ describe("HTTP API", () => {
     await app.close();
   });
 
+  it("rejects a claim override with an empty reason or reviewer identity", async () => {
+    const app = newApp();
+    const policyId = await issuePolicy(app);
+    const claimRes = await app.inject({
+      method: "POST",
+      url: `/policies/${policyId}/claims`,
+      payload: { incidentDate: "2026-03-01", cause: "collision" },
+    });
+    const { claimId } = claimRes.json();
+
+    const res = await app.inject({
+      method: "POST",
+      url: `/claims/${claimId}/override`,
+      payload: { handlerId: "h-1", reason: "", overrideBy: "" },
+    });
+    expect(res.statusCode).toBe(400);
+
+    await app.close();
+  });
+
   it("returns 409 on an illegal transition", async () => {
     const app = newApp();
     const { policyId } = (

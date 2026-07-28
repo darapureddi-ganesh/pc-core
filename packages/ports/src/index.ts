@@ -10,6 +10,14 @@ export type {
 
 export type { BillingAccount, BillingRepository } from "./billing.js";
 
-export type { ClaimStatus, Claim, ClaimsRepository } from "./claims.js";
+export type {
+  ClaimStatus,
+  Claim,
+  ClaimsRepository,
+  Handler,
+  HandlersRepository,
+  AssignmentLogEntry,
+  AssignmentLogRepository,
+} from "./claims.js";
 
 export type { Connector, TenantInfo } from "./tenant.js";

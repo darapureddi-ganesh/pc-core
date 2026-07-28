@@ -18,11 +18,13 @@ pnpm install
 pnpm dev
 ```
 
-Then open **http://localhost:3001** and click through the whole lifecycle:
-enter a vehicle, get a config-driven quote, bind, issue — the portal then
-auto-invoices the premium, lets you pay it off, and links straight to the
-generated **policy schedule** and **Form 51 certificate**. Every number and
-every document field traces back to `packages/products/private_car.2026.1.yaml`.
+Then open **http://localhost:3001**, sign in with the demo password
+(`pc-core-demo`, see "Portal login + tenant switching" below), and click
+through the whole lifecycle: enter a vehicle, get a config-driven quote,
+bind, issue — the portal then auto-invoices the premium, lets you pay it
+off, and links straight to the generated **policy schedule** and
+**Form 51 certificate**. Every number and every document field traces back
+to `packages/products/private_car.2026.1.yaml`.
 
 (`pnpm demo` runs a separate, non-interactive CLI walkthrough of the rating
 engine and the temporal timeline — no servers needed.)
@@ -41,6 +43,7 @@ packages/
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
   billing/        double-entry ledger + installment schedule  (pure, tested)
   claims-ai/      IDP field extraction + fraud scoring  (pure, tested)
+  claims-queue/   claim triage, SLA windows, handler assignment scoring  (pure, tested)
   forms/          policy schedule + Form 51 + premium register renderers  (pure, tested)
   db/             drizzle schema + the temporal migration (exclusion constraint)
   products/       private_car.2026.1.yaml — the product IS this file
@@ -77,20 +80,40 @@ proves the numbers trace to the YAML.
 
 ## Where the database comes in
 
-`packages/db` holds the Drizzle schema and `migrations/0001_policy_period.sql`.
-The load-bearing line there is a Postgres **GiST exclusion constraint** that makes
-overlapping issued slices impossible at the storage layer. The pure timeline
-logic in `domain` is what gets persisted into and queried out of that table.
+`packages/db` holds two things:
+
+- `migrations/0001_policy_period.sql` — a normalized `policy`/`policy_period`
+  schema whose load-bearing line is a Postgres **GiST exclusion constraint**
+  that makes overlapping issued slices impossible at the storage layer. Not
+  yet wired into a repository adapter — future work is materializing the
+  transaction-log domain model into these rows so the constraint is actually
+  enforced.
+- `migrations/0002_jsonb_adapters.sql` — pragmatic JSONB tables backing every
+  Connector SDK port today (`PostgresPolicyRepository`,
+  `PostgresBillingRepository`, `PostgresClaimsRepository`,
+  `PostgresHandlersRepository`, `PostgresAssignmentLogRepository` in
+  `@pc-core/adapters`): the same aggregate shape the in-memory adapters hold
+  in a `Map`, just durable. Set `DATABASE_URL` and the `demo` tenant runs
+  against real Postgres instead — useful for a pilot on infra a company
+  actually controls (e.g. India's data-localization requirement), without
+  waiting on the normalized model above.
+
+```bash
+createdb pc_core_dev
+psql pc_core_dev -f packages/db/migrations/0002_jsonb_adapters.sql
+DATABASE_URL=postgres://localhost/pc_core_dev pnpm --filter @pc-core/api start
+```
 
 ## Policy lifecycle API (P3)
 
 `apps/api` wires the two pure packages into a lifecycle service — quote → bind →
 issue → endorse → cancel, plus as-of reconstruction — behind a Fastify HTTP
 surface. It depends only on a `PolicyRepository` port; the in-memory adapter is
-used by tests and local dev, and a Postgres/Drizzle adapter (mapping to
-`packages/db`) slots in with no code change. Endorsements are stored as
-persistable deltas and **re-rated** on read, so a backdated endorsement
-recomputes every downstream slice.
+used by tests and local dev by default, and the Postgres adapter above (or a
+connected company's own system, via `RemoteHttpPolicyRepository`) slots in
+with no code change. Endorsements are stored as persistable deltas and
+**re-rated** on read, so a backdated endorsement recomputes every downstream
+slice.
 
 ```bash
 pnpm --filter @pc-core/api start    # listens on :3000 (in-memory store)
@@ -126,6 +149,38 @@ The portal reads `API_URL` server-side (default `http://127.0.0.1:3000` — IPv4
 on purpose, since `localhost` can resolve to IPv6 on Windows and miss the API)
 and links to documents via the client-visible `API_PUBLIC_BASE` in `app/config.ts`.
 
+Once a policy is issued, the same page lets you file a claim (FNOL) — with an
+optional free-text intake note — classify it, and auto-assign it to a
+handler. The claims-AI pillars run automatically on that FNOL call and are
+shown inline: the IDP extractor's fields pulled from the intake note, the
+fraud score with its actual signal text, and the classification pipeline
+trace (baseline vs. company-rule override) plus the ranked handler
+candidates. A second route, **Claims queue** (`app/claims/page.tsx`), is an
+ops dashboard over `GET /claims/queue/status`: pending/assigned counts,
+SLA-breach alerts, and live handler workload.
+
+### Portal login + tenant switching
+
+The whole portal sits behind a demo-grade login (`middleware.ts` + `lib/auth.ts`)
+— one shared password gates an HMAC-signed session cookie. This is **not**
+tenant-level authorization (the API already does that per-connector via
+`Authorization: Bearer <apiKey>`); it's just a login screen so the portal
+isn't wide open to anyone with the URL.
+
+```bash
+PORTAL_PASSWORD=your-password       # default: pc-core-demo
+PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
+```
+
+A tenant switcher in the header (`app/tenant-switcher.tsx`) lists every
+registered tenant (`GET /tenants`) and lets you flip between them — every
+server action then sends `X-Tenant-Id` for whichever tenant is selected
+(`app/tenant-actions.ts`), the same unauthenticated convenience header the
+API offers for local demos. Switching to `acme` only resolves if
+`apps/mock-insurer` is actually running (`pnpm platform` instead of `pnpm dev`)
+— otherwise you'll correctly see a real connection error, proving the tenant
+data really is routed to a different backend, not just relabeled.
+
 ## Billing & claims (P5)
 
 Issuing a policy auto-creates a premium **invoice** on a double-entry ledger
@@ -142,6 +197,34 @@ POST /policies/:id/claims     {incidentDate, cause}   # FNOL -> cover as-of inci
 POST /claims/:id/reserve      {amount}
 POST /claims/:id/settle       {amount}
 ```
+
+## Claim queue — triage, SLA, assignment
+
+Once a claim is on file, `ClaimQueueService` (`apps/api/src/service/claim-queue-service.ts`)
+handles the triage/routing side of it, backed by pure rules in
+`packages/claims-queue`: no hosted ML (same stance as claims-AI's fraud
+scorer) — a deterministic baseline derives claim type from the description and
+priority/complexity from the amount, and a company's own rules (VIP
+policyholders, urgent keywords) can override the **priority** baseline to
+CRITICAL, with the baseline and any override both returned for audit
+(claim type and complexity are amount/keyword-derived only — not currently
+rule-overridable). Assignment is a weighted score over each handler's
+expertise match, workload headroom, availability and speed; manual overrides
+are written to an audit log with the reviewer's identity and reason (an
+IRDAI requirement).
+
+```bash
+POST /claims/:id/classify   {policyholderId?}   # -> claim + baseline vs. rule-applied trace
+POST /claims/:id/assign                          # -> best-scoring handler + ranked candidates
+POST /claims/:id/override    {handlerId, reason, overrideBy}
+GET  /claims/queue/status                        # pending/assigned counts, SLA breaches, handler workloads
+```
+
+`HandlersRepository` and `AssignmentLogRepository` are Connector SDK ports
+(`@pc-core/ports`) alongside `ClaimsRepository` — a connected company's own
+adjuster roster and audit store slot in the same way its policy/claims data
+does; the in-memory defaults (`@pc-core/adapters`) seed a few demo handlers
+for the `demo` tenant.
 
 ## Documents & reporting (P6)
 
@@ -221,7 +304,8 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 ## Next (from the build plan)
 
 - **richer rating** — pro-rated endorsement premium, renewal terms
-- **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
-- **portal** — surface claims (FNOL) and tenant switching in the agent portal alongside billing and documents
+- **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
+- **portal** — claims (FNOL), the claim queue, a login screen, and tenant switching now all surface in the agent portal (see "Agent portal (P4)")
+- **CI** — GitHub Actions now runs typecheck + tests + the portal build on every push/PR (`.github/workflows/ci.yml`)
 
 See the design note and build plan for the full picture.

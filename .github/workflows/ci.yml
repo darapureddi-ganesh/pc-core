@@ -1,0 +1,34 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+
+jobs:
+  test:
+    name: typecheck, test, build
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+
+      # No `with: version:` here — it reads the version from package.json's
+      # "packageManager" field, and setting both conflicts (ERR_PNPM_BAD_PM_VERSION).
+      - uses: pnpm/action-setup@v4
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 22
+          cache: pnpm
+
+      - name: Install dependencies
+        run: pnpm install --frozen-lockfile
+
+      - name: Typecheck (packages + apps/api)
+        run: pnpm typecheck
+
+      - name: Test
+        run: pnpm test
+
+      - name: Build web portal (runs its own lint + typecheck)
+        run: pnpm --filter @pc-core/web build

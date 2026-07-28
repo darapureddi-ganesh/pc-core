@@ -1,15 +1,24 @@
 import { randomBytes } from "node:crypto";
 import {
+  InMemoryAssignmentLogRepository,
   InMemoryBillingRepository,
   InMemoryClaimsRepository,
+  InMemoryHandlersRepository,
   InMemoryPolicyRepository,
+  PostgresAssignmentLogRepository,
+  PostgresBillingRepository,
+  PostgresClaimsRepository,
+  PostgresHandlersRepository,
+  PostgresPolicyRepository,
   RemoteHttpPolicyRepository,
 } from "@pc-core/adapters";
-import type { Connector, TenantInfo } from "@pc-core/ports";
+import { createDb, type Db } from "@pc-core/db/client";
+import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
 import { PolicyService } from "./service/policy-service.js";
 import { BillingService } from "./service/billing-service.js";
 import { ClaimsService } from "./service/claims-service.js";
+import { ClaimQueueService } from "./service/claim-queue-service.js";
 import { DocumentService } from "./service/document-service.js";
 
 /** The full per-tenant service bundle the HTTP layer resolves and dispatches to. */
@@ -18,8 +27,43 @@ export interface TenantServices {
   policy: PolicyService;
   billing: BillingService;
   claims: ClaimsService;
+  claimQueue: ClaimQueueService;
   documents: DocumentService;
 }
+
+/** A handful of demo adjusters seeded for the "demo" tenant's claim queue. */
+const DEMO_HANDLERS: Handler[] = [
+  {
+    handlerId: "h-1",
+    name: "Asha Rao",
+    expertise: ["MOTOR_ACCIDENT", "MOTOR_OTHER"],
+    currentWorkload: 2,
+    maxCapacity: 15,
+    isAvailable: true,
+    avgHandlingDays: 4,
+    experienceYears: 6,
+  },
+  {
+    handlerId: "h-2",
+    name: "Vikram Shah",
+    expertise: ["MOTOR_THEFT"],
+    currentWorkload: 5,
+    maxCapacity: 12,
+    isAvailable: true,
+    avgHandlingDays: 8,
+    experienceYears: 9,
+  },
+  {
+    handlerId: "h-3",
+    name: "Neha Kulkarni",
+    expertise: ["MOTOR_ACCIDENT", "MOTOR_THEFT", "MOTOR_OTHER"],
+    currentWorkload: 1,
+    maxCapacity: 10,
+    isAvailable: false,
+    avgHandlingDays: 3,
+    experienceYears: 3,
+  },
+];
 
 interface RegisteredTenant {
   info: TenantInfo;
@@ -31,18 +75,44 @@ function buildServices(
   info: TenantInfo,
   connector: Connector,
   claimsAi?: ClaimsAiProviders,
+  seedHandlers: Handler[] = [],
 ): TenantServices {
   const policy = new PolicyService(connector.policy);
   const billing = new BillingService(
     connector.billing ?? new InMemoryBillingRepository(),
   );
-  const claims = new ClaimsService(
-    connector.claims ?? new InMemoryClaimsRepository(),
-    policy,
-    claimsAi,
+  const claimsRepo = connector.claims ?? new InMemoryClaimsRepository();
+  const claims = new ClaimsService(claimsRepo, policy, claimsAi);
+  const claimQueue = new ClaimQueueService(
+    claimsRepo,
+    connector.handlers ?? new InMemoryHandlersRepository(seedHandlers),
+    connector.assignmentLog ?? new InMemoryAssignmentLogRepository(),
   );
   const documents = new DocumentService(policy);
-  return { info, policy, billing, claims, documents };
+  return { info, policy, billing, claims, claimQueue, documents };
+}
+
+/**
+ * A connector backed by real Postgres storage — the same JSONB-adapter shape
+ * as the in-memory one, just durable (see packages/db/migrations/0002_jsonb_adapters.sql).
+ * Used when DATABASE_URL is set, so a pilot can run on infra a company
+ * actually controls (e.g. India's data-localization requirement) instead of
+ * pc-core's own in-memory demo store.
+ */
+export function buildPostgresConnector(db: Db, numberPrefix = "PC-2026"): Connector {
+  return {
+    policy: new PostgresPolicyRepository(db, numberPrefix),
+    billing: new PostgresBillingRepository(db),
+    claims: new PostgresClaimsRepository(db),
+    handlers: new PostgresHandlersRepository(db),
+    assignmentLog: new PostgresAssignmentLogRepository(db),
+  };
+}
+
+/** Upserts the demo handler roster into Postgres so a fresh database has a usable claim queue. */
+async function seedPostgresHandlers(db: Db, handlers: Handler[]): Promise<void> {
+  const repo = new PostgresHandlersRepository(db);
+  for (const handler of handlers) await repo.save(handler);
 }
 
 function newTenantId(name: string): string {
@@ -75,11 +145,12 @@ export class TenantRegistry {
     connector: Connector,
     apiKey: string,
     claimsAi?: ClaimsAiProviders,
+    seedHandlers?: Handler[],
   ): void {
     const entry: RegisteredTenant = {
       info,
       apiKey,
-      services: buildServices(info, connector, claimsAi),
+      services: buildServices(info, connector, claimsAi, seedHandlers),
     };
     this.byTenantId.set(info.tenantId, entry);
     this.byApiKey.set(apiKey, entry);
@@ -115,21 +186,35 @@ export const DEMO_API_KEY = "pk_demo";
 export const ACME_API_KEY = "pk_acme";
 
 /**
- * The demo registry: a "demo" tenant on pc-core's own in-memory store, and an
- * "acme" tenant whose policy data lives entirely in a separate process
- * (apps/mock-insurer) reached only over HTTP, with its own different internal
- * schema. Same PolicyService code, two genuinely different backends.
+ * The demo registry: a "demo" tenant (Postgres-backed when DATABASE_URL is
+ * set, in-memory otherwise), and an "acme" tenant whose policy data lives
+ * entirely in a separate process (apps/mock-insurer) reached only over HTTP,
+ * with its own different internal schema. Same PolicyService code, genuinely
+ * different backends.
  */
-export function buildDemoRegistry(
+export async function buildDemoRegistry(
   acmeBaseUrl = process.env.ACME_URL ?? "http://127.0.0.1:4000",
-): TenantRegistry {
+  databaseUrl = process.env.DATABASE_URL,
+): Promise<TenantRegistry> {
   const registry = new TenantRegistry();
 
-  registry.register(
-    { tenantId: "demo", name: "pc-core demo (in-memory)" },
-    { policy: new InMemoryPolicyRepository("PC-2026") },
-    DEMO_API_KEY,
-  );
+  if (databaseUrl) {
+    const { db } = createDb(databaseUrl);
+    await seedPostgresHandlers(db, DEMO_HANDLERS);
+    registry.register(
+      { tenantId: "demo", name: "pc-core demo (Postgres)" },
+      buildPostgresConnector(db),
+      DEMO_API_KEY,
+    );
+  } else {
+    registry.register(
+      { tenantId: "demo", name: "pc-core demo (in-memory)" },
+      { policy: new InMemoryPolicyRepository("PC-2026") },
+      DEMO_API_KEY,
+      undefined,
+      DEMO_HANDLERS,
+    );
+  }
 
   registry.register(
     { tenantId: "acme", name: "Acme Insurance (external system, via HTTP)" },

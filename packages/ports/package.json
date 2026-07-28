@@ -9,6 +9,7 @@
   },
   "dependencies": {
     "@pc-core/billing": "workspace:*",
+    "@pc-core/claims-queue": "workspace:*",
     "@pc-core/config-engine": "workspace:*",
     "@pc-core/domain": "workspace:*"
   }
