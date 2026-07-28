@@ -176,10 +176,20 @@ A tenant switcher in the header (`app/tenant-switcher.tsx`) lists every
 registered tenant (`GET /tenants`) and lets you flip between them — every
 server action then sends `X-Tenant-Id` for whichever tenant is selected
 (`app/tenant-actions.ts`), the same unauthenticated convenience header the
-API offers for local demos. Switching to `acme` only resolves if
+API offers for local demos. Switching to `beta` only resolves if
 `apps/mock-insurer` is actually running (`pnpm platform` instead of `pnpm dev`)
 — otherwise you'll correctly see a real connection error, proving the tenant
 data really is routed to a different backend, not just relabeled.
+
+A third route, **Connectors** (`app/connectors/page.tsx`), makes the Connector
+SDK's self-serve onboarding (`POST /connectors/register`) clickable instead of
+curl-only: point it at any REST service implementing the policy connector
+contract and get back a tenant + API key immediately, with a one-click
+"switch the portal to this tenant." Pointed at the default URL
+(`http://127.0.0.1:4000`, `apps/mock-insurer`, so run `pnpm platform`), a
+freshly-registered tenant's issued policies come back numbered by
+**that system's own scheme** (`BETA-000001`), not pc-core's — proof the
+connector is genuinely routed, not just relabeled.
 
 ## Billing & claims (P5)
 
@@ -253,7 +263,7 @@ just an implementation of those interfaces, against a database or over HTTP.
 The API is **multi-tenant and self-serve**. Two tenants ship seeded for the demo:
 
 - **`demo`** — pc-core's own in-memory store
-- **`acme`** — a policy store that lives entirely in a separate process
+- **`beta`** — a policy store that lives entirely in a separate process
   (`apps/mock-insurer`) with a *deliberately different internal schema*
   (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
   over HTTP via `RemoteHttpPolicyRepository`
@@ -264,8 +274,8 @@ API key:
 
 ```bash
 curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
-  -d '{"name":"Beta Insurance","policyBaseUrl":"https://beta.example.com"}'
-# -> { "tenantId": "beta-insurance-062a10", "name": "Beta Insurance", "apiKey": "pk_..." }
+  -d '{"name":"Gamma Insurance","policyBaseUrl":"https://gamma.example.com"}'
+# -> { "tenantId": "gamma-insurance-062a10", "name": "Gamma Insurance", "apiKey": "pk_..." }
 ```
 
 Every route resolves its tenant from `Authorization: Bearer <apiKey>` (the real,
@@ -274,8 +284,8 @@ per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header
 ```bash
 curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
   -H 'content-type: application/json' -d '{ ...quote... }'
-# Beta's issued policy is numbered by BETA'S OWN system and stored in its own
-# schema — pc-core never sees it. Acme's the same, via the seeded demo tenant.
+# Gamma's issued policy is numbered by GAMMA'S OWN system and stored in its own
+# schema — pc-core never sees it. Beta's the same, via the seeded demo tenant.
 ```
 
 Run the platform demo (API + a stand-in external insurer, printing both demo

@@ -183,17 +183,17 @@ export class TenantRegistry {
 
 /** Well-known keys for the two seeded demo tenants — fine for a local demo, never for production. */
 export const DEMO_API_KEY = "pk_demo";
-export const ACME_API_KEY = "pk_acme";
+export const BETA_API_KEY = "pk_beta";
 
 /**
  * The demo registry: a "demo" tenant (Postgres-backed when DATABASE_URL is
- * set, in-memory otherwise), and an "acme" tenant whose policy data lives
+ * set, in-memory otherwise), and a "beta" tenant whose policy data lives
  * entirely in a separate process (apps/mock-insurer) reached only over HTTP,
  * with its own different internal schema. Same PolicyService code, genuinely
  * different backends.
  */
 export async function buildDemoRegistry(
-  acmeBaseUrl = process.env.ACME_URL ?? "http://127.0.0.1:4000",
+  betaBaseUrl = process.env.BETA_URL ?? "http://127.0.0.1:4000",
   databaseUrl = process.env.DATABASE_URL,
 ): Promise<TenantRegistry> {
   const registry = new TenantRegistry();
@@ -217,9 +217,9 @@ export async function buildDemoRegistry(
   }
 
   registry.register(
-    { tenantId: "acme", name: "Acme Insurance (external system, via HTTP)" },
-    { policy: new RemoteHttpPolicyRepository(acmeBaseUrl) },
-    ACME_API_KEY,
+    { tenantId: "beta", name: "Beta Insurance (external system, via HTTP)" },
+    { policy: new RemoteHttpPolicyRepository(betaBaseUrl) },
+    BETA_API_KEY,
   );
 
   return registry;
