@@ -51,8 +51,8 @@ const amountSchema = z.object({ amount: z.number() });
 const classifySchema = z.object({ policyholderId: z.string().optional() });
 const overrideSchema = z.object({
   handlerId: z.string(),
-  reason: z.string(),
-  overrideBy: z.string(),
+  reason: z.string().min(1),
+  overrideBy: z.string().min(1),
 });
 const registerConnectorSchema = z.object({
   name: z.string().min(1),

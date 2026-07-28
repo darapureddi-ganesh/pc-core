@@ -5,7 +5,7 @@ import {
   InMemoryHandlersRepository,
   InMemoryPolicyRepository,
 } from "@pc-core/adapters";
-import type { Handler, MotorRisk } from "@pc-core/ports";
+import type { ClaimsRepository, Handler, MotorRisk } from "@pc-core/ports";
 import { PolicyService, type QuoteCommand } from "../src/service/policy-service.js";
 import { ClaimsService } from "../src/service/claims-service.js";
 import { ClaimQueueService } from "../src/service/claim-queue-service.js";
@@ -47,11 +47,12 @@ const handlers: Handler[] = [
 
 let policies: PolicyService;
 let claims: ClaimsService;
+let claimsRepo: ClaimsRepository;
 let queue: ClaimQueueService;
 
 beforeEach(() => {
   policies = new PolicyService(new InMemoryPolicyRepository());
-  const claimsRepo = new InMemoryClaimsRepository();
+  claimsRepo = new InMemoryClaimsRepository();
   claims = new ClaimsService(claimsRepo, policies);
   queue = new ClaimQueueService(
     claimsRepo,
@@ -118,6 +119,53 @@ describe("ClaimQueueService — assignment", () => {
       overrideBy: "manager@pc-core.demo",
     });
     expect(overridden.assignedHandlerId).toBe("h-generalist");
+  });
+
+  it("refuses to assign when the only handler is unavailable", async () => {
+    const offlineOnly = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository([{ ...handlers[0]!, isAvailable: false }]),
+      new InMemoryAssignmentLogRepository(),
+    );
+    const claimId = await issuedClaim("collision on highway");
+    await offlineOnly.classify({ claimId });
+    await expect(offlineOnly.assign(claimId)).rejects.toMatchObject({ code: "CONFLICT" });
+  });
+
+  it("logs the current algorithm recommendation on override, not the previously assigned handler", async () => {
+    const assignmentLog = new InMemoryAssignmentLogRepository();
+    const auditedQueue = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      assignmentLog,
+    );
+    const claimId = await issuedClaim("collision on highway");
+    await auditedQueue.classify({ claimId });
+    await auditedQueue.assign(claimId); // algorithm recommends + assigns h-accident
+
+    // First override moves it off the algorithm's pick, onto the generalist.
+    await auditedQueue.override({
+      claimId,
+      handlerId: "h-generalist",
+      reason: "accident specialist on leave",
+      overrideBy: "manager@pc-core.demo",
+    });
+
+    // A second override: the *previously assigned* handler is now h-generalist,
+    // but the algorithm still recommends h-accident (best expertise match) —
+    // the log must reflect the algorithm's live recommendation, not the stale
+    // "previous assignee" the buggy version used to log.
+    await auditedQueue.override({
+      claimId,
+      handlerId: "h-generalist", // reassign to the same handler again
+      reason: "confirming assignment after review",
+      overrideBy: "manager@pc-core.demo",
+    });
+
+    const entries = await assignmentLog.listForClaim(claimId);
+    const secondOverride = entries.filter((e) => e.isOverride)[1];
+    expect(secondOverride?.recommendedHandlerId).toBe("h-accident");
+    expect(secondOverride?.finalHandlerId).toBe("h-generalist");
   });
 });
 

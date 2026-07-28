@@ -18,4 +18,8 @@ describe("computeSla — TAT windows by priority", () => {
     const result = computeSla("2026-01-01", "LOW", new Date("2027-01-01T00:00:00Z"));
     expect(result.slaRiskScore).toBe(1);
   });
+
+  it("throws a clear error instead of producing an invalid deadline for a bad date", () => {
+    expect(() => computeSla("not-a-date", "LOW")).toThrow(/invalid incidentDate/);
+  });
 });

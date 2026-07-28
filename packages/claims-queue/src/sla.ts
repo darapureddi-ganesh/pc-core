@@ -30,6 +30,9 @@ export function computeSla(
 ): SlaResult {
   const tatDays = windows[priority];
   const incident = Date.parse(`${incidentDate}T00:00:00Z`);
+  if (Number.isNaN(incident)) {
+    throw new Error(`computeSla: invalid incidentDate "${incidentDate}"`);
+  }
   const deadline = new Date(incident + tatDays * MS_PER_DAY);
   const elapsedDays = (asOf.getTime() - incident) / MS_PER_DAY;
 

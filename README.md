@@ -149,13 +149,15 @@ POST /claims/:id/settle       {amount}
 Once a claim is on file, `ClaimQueueService` (`apps/api/src/service/claim-queue-service.ts`)
 handles the triage/routing side of it, backed by pure rules in
 `packages/claims-queue`: no hosted ML (same stance as claims-AI's fraud
-scorer) — a deterministic baseline classifies claim type/priority/complexity
-from the description and amount, and a company's own rules (VIP
-policyholders, urgent keywords, amount thresholds) can override it, with the
-baseline and the override both returned for audit. Assignment is a weighted
-score over each handler's expertise match, workload headroom, availability
-and speed; manual overrides are written to an audit log with the reviewer's
-identity and reason (an IRDAI requirement).
+scorer) — a deterministic baseline derives claim type from the description and
+priority/complexity from the amount, and a company's own rules (VIP
+policyholders, urgent keywords) can override the **priority** baseline to
+CRITICAL, with the baseline and any override both returned for audit
+(claim type and complexity are amount/keyword-derived only — not currently
+rule-overridable). Assignment is a weighted score over each handler's
+expertise match, workload headroom, availability and speed; manual overrides
+are written to an audit log with the reviewer's identity and reason (an
+IRDAI requirement).
 
 ```bash
 POST /claims/:id/classify   {policyholderId?}   # -> claim + baseline vs. rule-applied trace

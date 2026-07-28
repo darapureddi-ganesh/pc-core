@@ -19,7 +19,8 @@ export interface HandlerWorkload {
   name: string;
   currentWorkload: number;
   maxCapacity: number;
-  utilizationPct: number;
+  /** currentWorkload / maxCapacity, as a 0..1 fraction (not a 0..100 percentage) */
+  utilizationRatio: number;
 }
 
 export interface QueueStatus {
@@ -104,6 +105,9 @@ export class ClaimQueueService {
     if (!recommended) {
       throw new ServiceError("no handlers configured", "NOT_FOUND");
     }
+    if (!recommended.availability) {
+      throw new ServiceError("no available handler to assign this claim to", "CONFLICT");
+    }
 
     await this.applyAssignment(claim, recommended.handlerId);
     await this.assignmentLog.append({
@@ -125,17 +129,22 @@ export class ClaimQueueService {
     overrideBy: string;
   }): Promise<Claim> {
     const claim = await this.load(cmd.claimId);
-    const previousHandlerId = claim.assignedHandlerId ?? null;
 
     const target = await this.handlers.get(cmd.handlerId);
     if (!target) {
       throw new ServiceError(`handler ${cmd.handlerId} not found`, "NOT_FOUND");
     }
 
+    let algorithmRecommendation: string | null = null;
+    if (claim.claimType) {
+      const handlers = await this.handlers.list();
+      algorithmRecommendation = rankHandlers(claim.claimType, handlers)[0]?.handlerId ?? null;
+    }
+
     await this.applyAssignment(claim, cmd.handlerId);
     await this.assignmentLog.append({
       claimId: claim.claimId,
-      recommendedHandlerId: previousHandlerId,
+      recommendedHandlerId: algorithmRecommendation,
       finalHandlerId: cmd.handlerId,
       confidenceScore: 1,
       isOverride: true,
@@ -173,7 +182,7 @@ export class ClaimQueueService {
         name: h.name,
         currentWorkload: h.currentWorkload,
         maxCapacity: h.maxCapacity,
-        utilizationPct: h.maxCapacity ? h.currentWorkload / h.maxCapacity : 0,
+        utilizationRatio: h.maxCapacity ? h.currentWorkload / h.maxCapacity : 0,
       })),
     };
   }
