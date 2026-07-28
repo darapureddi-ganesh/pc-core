@@ -12,6 +12,7 @@
     "@pc-core/adapters": "workspace:*",
     "@pc-core/billing": "workspace:*",
     "@pc-core/claims-ai": "workspace:*",
+    "@pc-core/claims-queue": "workspace:*",
     "@pc-core/config-engine": "workspace:*",
     "@pc-core/domain": "workspace:*",
     "@pc-core/forms": "workspace:*",

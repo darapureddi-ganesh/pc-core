@@ -41,6 +41,7 @@ packages/
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
   billing/        double-entry ledger + installment schedule  (pure, tested)
   claims-ai/      IDP field extraction + fraud scoring  (pure, tested)
+  claims-queue/   claim triage, SLA windows, handler assignment scoring  (pure, tested)
   forms/          policy schedule + Form 51 + premium register renderers  (pure, tested)
   db/             drizzle schema + the temporal migration (exclusion constraint)
   products/       private_car.2026.1.yaml — the product IS this file
@@ -142,6 +143,32 @@ POST /policies/:id/claims     {incidentDate, cause}   # FNOL -> cover as-of inci
 POST /claims/:id/reserve      {amount}
 POST /claims/:id/settle       {amount}
 ```
+
+## Claim queue — triage, SLA, assignment
+
+Once a claim is on file, `ClaimQueueService` (`apps/api/src/service/claim-queue-service.ts`)
+handles the triage/routing side of it, backed by pure rules in
+`packages/claims-queue`: no hosted ML (same stance as claims-AI's fraud
+scorer) — a deterministic baseline classifies claim type/priority/complexity
+from the description and amount, and a company's own rules (VIP
+policyholders, urgent keywords, amount thresholds) can override it, with the
+baseline and the override both returned for audit. Assignment is a weighted
+score over each handler's expertise match, workload headroom, availability
+and speed; manual overrides are written to an audit log with the reviewer's
+identity and reason (an IRDAI requirement).
+
+```bash
+POST /claims/:id/classify   {policyholderId?}   # -> claim + baseline vs. rule-applied trace
+POST /claims/:id/assign                          # -> best-scoring handler + ranked candidates
+POST /claims/:id/override    {handlerId, reason, overrideBy}
+GET  /claims/queue/status                        # pending/assigned counts, SLA breaches, handler workloads
+```
+
+`HandlersRepository` and `AssignmentLogRepository` are Connector SDK ports
+(`@pc-core/ports`) alongside `ClaimsRepository` — a connected company's own
+adjuster roster and audit store slot in the same way its policy/claims data
+does; the in-memory defaults (`@pc-core/adapters`) seed a few demo handlers
+for the `demo` tenant.
 
 ## Documents & reporting (P6)
 

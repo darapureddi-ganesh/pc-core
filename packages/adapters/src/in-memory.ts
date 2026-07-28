@@ -1,8 +1,12 @@
 import type {
+  AssignmentLogEntry,
+  AssignmentLogRepository,
   BillingAccount,
   BillingRepository,
   Claim,
   ClaimsRepository,
+  Handler,
+  HandlersRepository,
   PolicyAggregate,
   PolicyRepository,
 } from "@pc-core/ports";
@@ -72,5 +76,37 @@ export class InMemoryClaimsRepository implements ClaimsRepository {
   }
   async list(): Promise<Claim[]> {
     return [...this.store.values()].map((c) => structuredClone(c));
+  }
+}
+
+export class InMemoryHandlersRepository implements HandlersRepository {
+  private readonly store = new Map<string, Handler>();
+
+  constructor(seed: Handler[] = []) {
+    for (const handler of seed) this.store.set(handler.handlerId, handler);
+  }
+
+  async list(): Promise<Handler[]> {
+    return [...this.store.values()].map((h) => structuredClone(h));
+  }
+  async get(handlerId: string): Promise<Handler | undefined> {
+    const found = this.store.get(handlerId);
+    return found ? structuredClone(found) : undefined;
+  }
+  async save(handler: Handler): Promise<void> {
+    this.store.set(handler.handlerId, structuredClone(handler));
+  }
+}
+
+export class InMemoryAssignmentLogRepository implements AssignmentLogRepository {
+  private readonly entries: AssignmentLogEntry[] = [];
+
+  async append(entry: AssignmentLogEntry): Promise<void> {
+    this.entries.push(structuredClone(entry));
+  }
+  async listForClaim(claimId: string): Promise<AssignmentLogEntry[]> {
+    return this.entries
+      .filter((e) => e.claimId === claimId)
+      .map((e) => structuredClone(e));
   }
 }

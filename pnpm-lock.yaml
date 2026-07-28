@@ -44,6 +44,9 @@ importers:
       '@pc-core/claims-ai':
         specifier: workspace:*
         version: link:../../packages/claims-ai
+      '@pc-core/claims-queue':
+        specifier: workspace:*
+        version: link:../../packages/claims-queue
       '@pc-core/config-engine':
         specifier: workspace:*
         version: link:../../packages/config-engine
@@ -108,6 +111,8 @@ importers:
 
   packages/claims-ai: {}
 
+  packages/claims-queue: {}
+
   packages/config-engine:
     dependencies:
       expr-eval:
@@ -139,6 +144,9 @@ importers:
       '@pc-core/billing':
         specifier: workspace:*
         version: link:../billing
+      '@pc-core/claims-queue':
+        specifier: workspace:*
+        version: link:../claims-queue
       '@pc-core/config-engine':
         specifier: workspace:*
         version: link:../config-engine

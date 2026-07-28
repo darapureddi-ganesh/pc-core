@@ -1,15 +1,18 @@
 import { randomBytes } from "node:crypto";
 import {
+  InMemoryAssignmentLogRepository,
   InMemoryBillingRepository,
   InMemoryClaimsRepository,
+  InMemoryHandlersRepository,
   InMemoryPolicyRepository,
   RemoteHttpPolicyRepository,
 } from "@pc-core/adapters";
-import type { Connector, TenantInfo } from "@pc-core/ports";
+import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
 import { PolicyService } from "./service/policy-service.js";
 import { BillingService } from "./service/billing-service.js";
 import { ClaimsService } from "./service/claims-service.js";
+import { ClaimQueueService } from "./service/claim-queue-service.js";
 import { DocumentService } from "./service/document-service.js";
 
 /** The full per-tenant service bundle the HTTP layer resolves and dispatches to. */
@@ -18,8 +21,43 @@ export interface TenantServices {
   policy: PolicyService;
   billing: BillingService;
   claims: ClaimsService;
+  claimQueue: ClaimQueueService;
   documents: DocumentService;
 }
+
+/** A handful of demo adjusters seeded for the "demo" tenant's claim queue. */
+const DEMO_HANDLERS: Handler[] = [
+  {
+    handlerId: "h-1",
+    name: "Asha Rao",
+    expertise: ["MOTOR_ACCIDENT", "MOTOR_OTHER"],
+    currentWorkload: 2,
+    maxCapacity: 15,
+    isAvailable: true,
+    avgHandlingDays: 4,
+    experienceYears: 6,
+  },
+  {
+    handlerId: "h-2",
+    name: "Vikram Shah",
+    expertise: ["MOTOR_THEFT"],
+    currentWorkload: 5,
+    maxCapacity: 12,
+    isAvailable: true,
+    avgHandlingDays: 8,
+    experienceYears: 9,
+  },
+  {
+    handlerId: "h-3",
+    name: "Neha Kulkarni",
+    expertise: ["MOTOR_ACCIDENT", "MOTOR_THEFT", "MOTOR_OTHER"],
+    currentWorkload: 1,
+    maxCapacity: 10,
+    isAvailable: false,
+    avgHandlingDays: 3,
+    experienceYears: 3,
+  },
+];
 
 interface RegisteredTenant {
   info: TenantInfo;
@@ -31,18 +69,21 @@ function buildServices(
   info: TenantInfo,
   connector: Connector,
   claimsAi?: ClaimsAiProviders,
+  seedHandlers: Handler[] = [],
 ): TenantServices {
   const policy = new PolicyService(connector.policy);
   const billing = new BillingService(
     connector.billing ?? new InMemoryBillingRepository(),
   );
-  const claims = new ClaimsService(
-    connector.claims ?? new InMemoryClaimsRepository(),
-    policy,
-    claimsAi,
+  const claimsRepo = connector.claims ?? new InMemoryClaimsRepository();
+  const claims = new ClaimsService(claimsRepo, policy, claimsAi);
+  const claimQueue = new ClaimQueueService(
+    claimsRepo,
+    new InMemoryHandlersRepository(seedHandlers),
+    new InMemoryAssignmentLogRepository(),
   );
   const documents = new DocumentService(policy);
-  return { info, policy, billing, claims, documents };
+  return { info, policy, billing, claims, claimQueue, documents };
 }
 
 function newTenantId(name: string): string {
@@ -75,11 +116,12 @@ export class TenantRegistry {
     connector: Connector,
     apiKey: string,
     claimsAi?: ClaimsAiProviders,
+    seedHandlers?: Handler[],
   ): void {
     const entry: RegisteredTenant = {
       info,
       apiKey,
-      services: buildServices(info, connector, claimsAi),
+      services: buildServices(info, connector, claimsAi, seedHandlers),
     };
     this.byTenantId.set(info.tenantId, entry);
     this.byApiKey.set(apiKey, entry);
@@ -129,6 +171,8 @@ export function buildDemoRegistry(
     { tenantId: "demo", name: "pc-core demo (in-memory)" },
     { policy: new InMemoryPolicyRepository("PC-2026") },
     DEMO_API_KEY,
+    undefined,
+    DEMO_HANDLERS,
   );
 
   registry.register(

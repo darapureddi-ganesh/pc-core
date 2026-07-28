@@ -48,6 +48,12 @@ const fnolSchema = z.object({
   rawIntakeText: z.string().optional(),
 });
 const amountSchema = z.object({ amount: z.number() });
+const classifySchema = z.object({ policyholderId: z.string().optional() });
+const overrideSchema = z.object({
+  handlerId: z.string(),
+  reason: z.string(),
+  overrideBy: z.string(),
+});
 const registerConnectorSchema = z.object({
   name: z.string().min(1),
   policyBaseUrl: z.string().url(),
@@ -204,6 +210,25 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   );
 
   app.get("/claims/:id", async (req) => services(req).claims.get(id(req)));
+
+  // ── claim queue (triage, assignment, SLA) ──────────────────────────────────
+  app.post("/claims/:id/classify", async (req) => {
+    const { policyholderId } = classifySchema.parse(req.body ?? {});
+    return services(req).claimQueue.classify({ claimId: id(req), policyholderId });
+  });
+
+  app.post("/claims/:id/assign", async (req) =>
+    services(req).claimQueue.assign(id(req)),
+  );
+
+  app.post("/claims/:id/override", async (req) =>
+    services(req).claimQueue.override({
+      claimId: id(req),
+      ...overrideSchema.parse(req.body),
+    }),
+  );
+
+  app.get("/claims/queue/status", async (req) => services(req).claimQueue.queueStatus());
 
   // ── documents & reporting ─────────────────────────────────────────────────
   app.get("/policies/:id/documents", async (req) =>
