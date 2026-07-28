@@ -8,7 +8,9 @@
     ".": "./src/index.ts"
   },
   "dependencies": {
-    "@pc-core/ports": "workspace:*"
+    "@pc-core/db": "workspace:*",
+    "@pc-core/ports": "workspace:*",
+    "drizzle-orm": "^0.36.4"
   },
   "devDependencies": {
     "fastify": "^5.1.0"

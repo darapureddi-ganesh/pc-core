@@ -78,20 +78,40 @@ proves the numbers trace to the YAML.
 
 ## Where the database comes in
 
-`packages/db` holds the Drizzle schema and `migrations/0001_policy_period.sql`.
-The load-bearing line there is a Postgres **GiST exclusion constraint** that makes
-overlapping issued slices impossible at the storage layer. The pure timeline
-logic in `domain` is what gets persisted into and queried out of that table.
+`packages/db` holds two things:
+
+- `migrations/0001_policy_period.sql` — a normalized `policy`/`policy_period`
+  schema whose load-bearing line is a Postgres **GiST exclusion constraint**
+  that makes overlapping issued slices impossible at the storage layer. Not
+  yet wired into a repository adapter — future work is materializing the
+  transaction-log domain model into these rows so the constraint is actually
+  enforced.
+- `migrations/0002_jsonb_adapters.sql` — pragmatic JSONB tables backing every
+  Connector SDK port today (`PostgresPolicyRepository`,
+  `PostgresBillingRepository`, `PostgresClaimsRepository`,
+  `PostgresHandlersRepository`, `PostgresAssignmentLogRepository` in
+  `@pc-core/adapters`): the same aggregate shape the in-memory adapters hold
+  in a `Map`, just durable. Set `DATABASE_URL` and the `demo` tenant runs
+  against real Postgres instead — useful for a pilot on infra a company
+  actually controls (e.g. India's data-localization requirement), without
+  waiting on the normalized model above.
+
+```bash
+createdb pc_core_dev
+psql pc_core_dev -f packages/db/migrations/0002_jsonb_adapters.sql
+DATABASE_URL=postgres://localhost/pc_core_dev pnpm --filter @pc-core/api start
+```
 
 ## Policy lifecycle API (P3)
 
 `apps/api` wires the two pure packages into a lifecycle service — quote → bind →
 issue → endorse → cancel, plus as-of reconstruction — behind a Fastify HTTP
 surface. It depends only on a `PolicyRepository` port; the in-memory adapter is
-used by tests and local dev, and a Postgres/Drizzle adapter (mapping to
-`packages/db`) slots in with no code change. Endorsements are stored as
-persistable deltas and **re-rated** on read, so a backdated endorsement
-recomputes every downstream slice.
+used by tests and local dev by default, and the Postgres adapter above (or a
+connected company's own system, via `RemoteHttpPolicyRepository`) slots in
+with no code change. Endorsements are stored as persistable deltas and
+**re-rated** on read, so a backdated endorsement recomputes every downstream
+slice.
 
 ```bash
 pnpm --filter @pc-core/api start    # listens on :3000 (in-memory store)
@@ -250,7 +270,7 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 ## Next (from the build plan)
 
 - **richer rating** — pro-rated endorsement premium, renewal terms
-- **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
+- **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
 - **portal** — surface claims (FNOL) and tenant switching in the agent portal alongside billing and documents
 
 See the design note and build plan for the full picture.
