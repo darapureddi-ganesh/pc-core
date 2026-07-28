@@ -167,8 +167,7 @@ directly — only the storage contracts in `@pc-core/ports`
 (`PolicyRepository`, `BillingRepository`, `ClaimsRepository`). A connector is
 just an implementation of those interfaces, against a database or over HTTP.
 
-The API is **multi-tenant**: each request carries an `X-Tenant-Id` header, and
-the registry maps it to that tenant's connector. Two tenants ship out of the box:
+The API is **multi-tenant and self-serve**. Two tenants ship seeded for the demo:
 
 - **`demo`** — pc-core's own in-memory store
 - **`acme`** — a policy store that lives entirely in a separate process
@@ -176,37 +175,53 @@ the registry maps it to that tenant's connector. Two tenants ship out of the box
   (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
   over HTTP via `RemoteHttpPolicyRepository`
 
+Any third company can **onboard at runtime, no restart, no code change** — point
+pc-core at a REST service implementing the connector contract and get back an
+API key:
+
 ```bash
-# same API, same code — routed to Acme's external system by the tenant header
-curl -sX POST localhost:3000/quotes -H 'x-tenant-id: acme' \
-  -H 'content-type: application/json' -d '{ ...quote... }'
-# the issued policy is numbered ACME-000001 and stored in Acme's own schema;
-# GET http://localhost:4000/_raw shows it there, untranslated.
+curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
+  -d '{"name":"Beta Insurance","policyBaseUrl":"https://beta.example.com"}'
+# -> { "tenantId": "beta-insurance-062a10", "name": "Beta Insurance", "apiKey": "pk_..." }
 ```
 
-Run the platform demo (API + external insurer) with `pnpm platform`.
+Every route resolves its tenant from `Authorization: Bearer <apiKey>` (the real,
+per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header:
+
+```bash
+curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
+  -H 'content-type: application/json' -d '{ ...quote... }'
+# Beta's issued policy is numbered by BETA'S OWN system and stored in its own
+# schema — pc-core never sees it. Acme's the same, via the seeded demo tenant.
+```
+
+Run the platform demo (API + a stand-in external insurer, printing both demo
+API keys on boot) with `pnpm platform`.
 
 ## Claims-AI (from the technology matrix)
 
-Two pillars of the claims-technology matrix run as pure, swappable services on
-every connected tenant, through the same `ClaimsRepository` port:
+Two pillars of the claims-technology matrix run as pure services behind
+**swappable provider interfaces** — `DocumentExtractor` and `FraudScorer`
+(`packages/claims-ai`) — so `ClaimsService` never depends on a concrete model:
 
-- **IDP / OCR (`extractClaimFields`)** — pulls registration numbers, policy
-  numbers, amounts and dates out of raw FNOL / OCR text (tuned for the Indian
-  document mix). A connector can swap a real OCR/LLM provider behind the same
-  interface.
-- **Fraud scoring (`scoreFraudRisk`)** — a deterministic v1 (repeat-claim and
-  suspiciously-early-incident signals) that runs at FNOL against the tenant's
-  own claim history. A real graph/anomaly model swaps in behind the same shape.
+- **IDP / OCR** — `RegexDocumentExtractor` (the default: pulls registration
+  numbers, policy numbers, amounts and dates out of raw FNOL text, tuned for
+  the Indian document mix) or `LlmDocumentExtractor`, a reference adapter that
+  puts any `LlmClient` (Claude, GPT, a local model) behind the same interface —
+  strict-JSON prompting, safe degradation on a malformed or failed reply.
+- **Fraud scoring** — `HeuristicFraudScorer` (the default: repeat-claim and
+  early-incident signals) against `FraudScorer`, ready for a real graph/anomaly
+  model behind the same shape.
 
-Both are honest heuristics, not hosted ML — pc-core ships no model. They prove
-the pillars end-to-end and define the interface a company plugs a real model
-into. FNOL returns `fraudScore`, `fraudSignals`, and `extractedFields`.
+pc-core ships no hosted model — these are honest v1s proving the pillars
+end-to-end and defining the seam a company's own model plugs into per tenant
+(`ClaimsService`'s third constructor argument). FNOL returns `fraudScore`,
+`fraudSignals`, and `extractedFields`.
 
 ## Next (from the build plan)
 
 - **richer rating** — pro-rated endorsement premium, renewal terms
-- **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger
-- **portal** — surface claims (FNOL) in the agent portal alongside billing and documents
+- **infra** — Postgres adapters for the repository ports; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
+- **portal** — surface claims (FNOL) and tenant switching in the agent portal alongside billing and documents
 
 See the design note and build plan for the full picture.

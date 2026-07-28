@@ -48,6 +48,10 @@ const fnolSchema = z.object({
   rawIntakeText: z.string().optional(),
 });
 const amountSchema = z.object({ amount: z.number() });
+const registerConnectorSchema = z.object({
+  name: z.string().min(1),
+  policyBaseUrl: z.string().url(),
+});
 
 const DEFAULT_TENANT = "demo";
 
@@ -55,11 +59,14 @@ const httpStatus = (code: ServiceErrorCode): number =>
   code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
 
 /**
- * Thin, tenant-aware HTTP surface over the lifecycle, billing, claims and
- * document services. Every route resolves its service bundle from the
- * `X-Tenant-Id` header (defaulting to "demo") — the route handlers below have
- * no idea whether the resolved tenant's data lives in-process or on the other
- * side of an HTTP call to a connected company's own system.
+ * Thin, tenant-aware, multi-tenant HTTP surface over the lifecycle, billing,
+ * claims and document services. Every route resolves its service bundle from
+ * either an `Authorization: Bearer <apiKey>` header (real, per-connector auth
+ * — the key a company gets back from POST /connectors/register) or, as an
+ * unauthenticated convenience for local demos, an `X-Tenant-Id` header
+ * (defaulting to "demo"). Route handlers never know whether the resolved
+ * tenant's data lives in-process or on the other side of an HTTP call to a
+ * connected company's own system.
  */
 export function buildServer(registry: TenantRegistry): FastifyInstance {
   const app = Fastify({ logger: false });
@@ -77,6 +84,14 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   const id = (req: { params: unknown }) => (req.params as { id: string }).id;
 
   const services = (req: FastifyRequest): TenantServices => {
+    const auth = req.headers.authorization;
+    if (auth?.startsWith("Bearer ")) {
+      const apiKey = auth.slice("Bearer ".length);
+      const tenant = registry.resolveByApiKey(apiKey);
+      if (!tenant) throw new ServiceError("invalid API key", "NOT_FOUND");
+      return tenant;
+    }
+
     const tenantId = (req.headers["x-tenant-id"] as string) ?? DEFAULT_TENANT;
     const tenant = registry.resolve(tenantId);
     if (!tenant) {
@@ -87,6 +102,15 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
 
   // ── platform ─────────────────────────────────────────────────────────────
   app.get("/tenants", async () => registry.list());
+
+  // Self-serve onboarding: point pc-core at a REST service implementing the
+  // policy connector contract and get back a tenant ID + API key. No code
+  // change or redeploy on pc-core's side — this is the "connect my system" door.
+  app.post("/connectors/register", async (req, reply) => {
+    const { name, policyBaseUrl } = registerConnectorSchema.parse(req.body);
+    const tenant = registry.registerConnector(name, policyBaseUrl);
+    return reply.status(201).send(tenant);
+  });
 
   // ── policy lifecycle ───────────────────────────────────────────────────
   app.post("/quotes", async (req, reply) => {

@@ -1,12 +1,19 @@
 import { randomUUID } from "node:crypto";
 import {
-  extractClaimFields,
-  scoreFraudRisk,
+  HeuristicFraudScorer,
+  RegexDocumentExtractor,
+  type DocumentExtractor,
   type ExtractedFields,
+  type FraudScorer,
 } from "@pc-core/claims-ai";
 import type { Claim, ClaimsRepository } from "@pc-core/ports";
 import { ServiceError } from "./errors.js";
 import type { PolicyService } from "./policy-service.js";
+
+export interface ClaimsAiProviders {
+  extractor?: DocumentExtractor;
+  fraudScorer?: FraudScorer;
+}
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -35,14 +42,22 @@ function toFlatFields(fields: ExtractedFields): Record<string, string> {
  *
  * FNOL also runs the claims-AI pillars: IDP extraction over any raw intake
  * text, and a fraud-risk score against this tenant's own claim history — both
- * pure functions operating only through the ClaimsRepository port, so they run
- * identically for the demo tenant or a connected company's own system.
+ * behind swappable provider interfaces (DocumentExtractor / FraudScorer), so a
+ * connected company can supply a real OCR/LLM or fraud model per tenant. The
+ * defaults are pc-core's own regex extractor and heuristic scorer.
  */
 export class ClaimsService {
+  private readonly extractor: DocumentExtractor;
+  private readonly fraudScorer: FraudScorer;
+
   constructor(
     private readonly repo: ClaimsRepository,
     private readonly policies: PolicyService,
-  ) {}
+    providers: ClaimsAiProviders = {},
+  ) {
+    this.extractor = providers.extractor ?? new RegexDocumentExtractor();
+    this.fraudScorer = providers.fraudScorer ?? new HeuristicFraudScorer();
+  }
 
   async fnol(cmd: {
     policyId: string;
@@ -70,10 +85,14 @@ export class ClaimsService {
     const priorClaimsOnPolicy = (await this.repo.list()).filter(
       (c) => c.policyId === cmd.policyId,
     ).length;
-    const { score, signals } = scoreFraudRisk({
+    const { score, signals } = await this.fraudScorer.score({
       priorClaimsOnPolicy,
       daysSincePolicyStart: daysBetween(policy.term.from, cmd.incidentDate),
     });
+
+    const extractedFields = cmd.rawIntakeText
+      ? toFlatFields(await this.extractor.extract(cmd.rawIntakeText))
+      : undefined;
 
     const claim: Claim = {
       claimId: randomUUID(),
@@ -85,9 +104,7 @@ export class ClaimsService {
       sumInsured: snapshot.rating.sumInsured,
       reserveAmount: 0,
       settledAmount: 0,
-      ...(cmd.rawIntakeText && {
-        extractedFields: toFlatFields(extractClaimFields(cmd.rawIntakeText)),
-      }),
+      ...(extractedFields && { extractedFields }),
       fraudScore: score,
       fraudSignals: signals,
     };

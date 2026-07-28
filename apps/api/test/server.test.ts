@@ -1,13 +1,18 @@
-import { describe, it, expect } from "vitest";
+import { describe, it, expect, beforeAll, afterAll } from "vitest";
+import Fastify, { type FastifyInstance } from "fastify";
 import { InMemoryPolicyRepository } from "@pc-core/adapters";
+import type { PolicyAggregate } from "@pc-core/ports";
 import { buildServer } from "../src/http/server.js";
 import { TenantRegistry } from "../src/tenants.js";
+
+const DEMO_KEY = "pk_test_demo";
 
 const newRegistry = () => {
   const registry = new TenantRegistry();
   registry.register(
     { tenantId: "demo", name: "pc-core demo" },
     { policy: new InMemoryPolicyRepository() },
+    DEMO_KEY,
   );
   return registry;
 };
@@ -154,6 +159,7 @@ describe("multi-tenancy — the same API, routed to different connectors", () =>
     registry.register(
       { tenantId: "other", name: "Other Co" },
       { policy: new InMemoryPolicyRepository("OTHER") },
+      "pk_test_other",
     );
     const app = buildServer(registry);
 
@@ -216,6 +222,109 @@ describe("multi-tenancy — the same API, routed to different connectors", () =>
     expect(res.statusCode).toBe(200);
     expect(res.json()).toEqual([{ tenantId: "demo", name: "pc-core demo" }]);
 
+    await app.close();
+  });
+});
+
+/** A minimal external policy store satisfying the connector contract, standing
+ * in for a company's own system during self-serve onboarding. */
+function buildExternalPolicyServer(): FastifyInstance {
+  const app = Fastify({ logger: false });
+  const store = new Map<string, PolicyAggregate>();
+  let seq = 0;
+
+  app.post("/policies", async (req, reply) => {
+    const policy = req.body as PolicyAggregate;
+    store.set(policy.policyId, policy);
+    return reply.status(201).send();
+  });
+  app.get("/policies/:id", async (req, reply) => {
+    const found = store.get((req.params as { id: string }).id);
+    return found ?? reply.status(404).send();
+  });
+  app.put("/policies/:id", async (req) => {
+    store.set((req.params as { id: string }).id, req.body as PolicyAggregate);
+    return {};
+  });
+  app.get("/policies", async () => [...store.values()]);
+  app.post("/policies/next-number", async () => {
+    seq += 1;
+    return { policyNumber: `EXT-${String(seq).padStart(5, "0")}` };
+  });
+  return app;
+}
+
+describe("self-serve connector onboarding + API-key auth", () => {
+  let externalServer: FastifyInstance;
+  let externalBaseUrl: string;
+
+  beforeAll(async () => {
+    externalServer = buildExternalPolicyServer();
+    externalBaseUrl = await externalServer.listen({ port: 0, host: "127.0.0.1" });
+  });
+  afterAll(async () => externalServer.close());
+
+  it("registers a new connector and immediately runs the full lifecycle through it", async () => {
+    const app = newApp();
+
+    const reg = await app.inject({
+      method: "POST",
+      url: "/connectors/register",
+      payload: { name: "External Co", policyBaseUrl: externalBaseUrl },
+    });
+    expect(reg.statusCode).toBe(201);
+    const { tenantId, apiKey } = reg.json();
+    expect(tenantId).toMatch(/^external-co-/);
+    expect(apiKey).toMatch(/^pk_/);
+
+    // The new tenant is immediately visible and usable, authenticated by its key.
+    const tenants = (await app.inject({ method: "GET", url: "/tenants" })).json();
+    expect(tenants.map((t: { tenantId: string }) => t.tenantId)).toContain(tenantId);
+
+    const auth = { authorization: `Bearer ${apiKey}` };
+    const quoteRes = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: auth,
+    });
+    expect(quoteRes.statusCode).toBe(201);
+    const { policyId } = quoteRes.json();
+
+    await app.inject({ method: "POST", url: `/policies/${policyId}/bind`, headers: auth });
+    const issueRes = await app.inject({
+      method: "POST",
+      url: `/policies/${policyId}/issue`,
+      headers: auth,
+    });
+    expect(issueRes.statusCode).toBe(200);
+    expect(issueRes.json().policyNumber).toBe("EXT-00001");
+
+    await app.close();
+  });
+
+  it("rejects an unknown API key", async () => {
+    const app = newApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: { authorization: "Bearer pk_not_a_real_key" },
+    });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+
+  it("prefers a valid API key over the X-Tenant-Id fallback", async () => {
+    const app = newApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: { authorization: `Bearer ${DEMO_KEY}`, "x-tenant-id": "nonexistent" },
+    });
+    // The key resolves the real "demo" tenant even though the header says otherwise.
+    expect(res.statusCode).toBe(201);
     await app.close();
   });
 });
