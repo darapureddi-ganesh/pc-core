@@ -27,15 +27,24 @@ export async function getTenants(): Promise<TenantInfo[]> {
  * policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository
  * and apps/mock-insurer for a reference implementation) and get back a new
  * tenant + API key — no restart, no code change on pc-core's side.
+ *
+ * Optionally also points this tenant's claims-AI IDP extraction at a
+ * self-hosted Ollama model instead of the default regex extractor — pc-core
+ * ships no hosted model, so this is how a company brings their own.
  */
 export async function registerConnector(
   name: string,
   policyBaseUrl: string,
+  ollama?: { model: string; baseUrl?: string },
 ): Promise<ConnectorRegistration> {
   const res = await fetch(`${API}/connectors/register`, {
     method: "POST",
     headers: { "content-type": "application/json" },
-    body: JSON.stringify({ name, policyBaseUrl }),
+    body: JSON.stringify({
+      name,
+      policyBaseUrl,
+      ...(ollama?.model && { ollamaModel: ollama.model, ollamaBaseUrl: ollama.baseUrl }),
+    }),
     cache: "no-store",
   });
   if (!res.ok) throw new Error(await readError(res));

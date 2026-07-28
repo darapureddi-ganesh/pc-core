@@ -311,6 +311,26 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 (`ClaimsService`'s third constructor argument). FNOL returns `fraudScore`,
 `fraudSignals`, and `extractedFields`.
 
+### Bring your own open-source model (Ollama)
+
+`OllamaLlmClient` (`packages/claims-ai/src/ollama.ts`) is a concrete `LlmClient`
+adapter for a self-hosted [Ollama](https://ollama.com) server — pull any
+open-source model (`ollama pull llama3.1`) and point `LlmDocumentExtractor` at
+it. This is wired all the way through self-serve onboarding: pass
+`ollamaModel` (and optionally `ollamaBaseUrl`) to `POST /connectors/register`,
+or fill in the same fields on the portal's **Connectors** page, and that
+tenant's claim intake runs your model's extraction instead of the default
+regex extractor — no code change.
+
+```bash
+curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
+  -d '{"name":"Delta Insurance","policyBaseUrl":"http://127.0.0.1:4000","ollamaModel":"llama3.1"}'
+```
+
+Any other model server works the same way — implement `LlmClient`'s single
+method (`complete(prompt): Promise<string>`) against it and pass that instead
+of `OllamaLlmClient` wherever `ClaimsAiProviders` is built.
+
 ## Next (from the build plan)
 
 - **richer rating** — pro-rated endorsement premium, renewal terms

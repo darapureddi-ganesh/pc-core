@@ -14,3 +14,6 @@ export type {
   FraudScorer,
   LlmClient,
 } from "./providers.js";
+
+export { OllamaLlmClient } from "./ollama.js";
+export type { OllamaClientOptions } from "./ollama.js";
