@@ -121,6 +121,20 @@ export interface ConnectorRegistration extends TenantInfo {
   apiKey: string;
 }
 
+export interface Customer {
+  customerId: string;
+  name: string;
+  email?: string;
+  phone?: string;
+  createdAt: string;
+}
+
+export interface CustomerHistory {
+  customer: Customer;
+  policies: Policy[];
+  claims: Claim[];
+}
+
 export interface QueueStatus {
   totalPending: number;
   totalAssigned: number;

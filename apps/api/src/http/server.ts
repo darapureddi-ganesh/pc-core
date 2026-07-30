@@ -27,6 +27,13 @@ const quoteSchema = z.object({
   term: z.object({ from: z.string(), to: z.string() }),
   risk: riskSchema,
   insured: z.object({ name: z.string() }).optional(),
+  customerId: z.string().optional(),
+});
+
+const registerCustomerSchema = z.object({
+  name: z.string().min(1),
+  email: z.string().email().optional(),
+  phone: z.string().optional(),
 });
 
 const changeSchema = z.discriminatedUnion("op", [
@@ -127,6 +134,24 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
     );
     return reply.status(201).send(tenant);
   });
+
+  // ── customers ────────────────────────────────────────────────────────────
+  // The identity that ties a person's history together across renewals,
+  // multiple vehicles, and every claim on every one of their policies.
+  app.post("/customers", async (req, reply) => {
+    const customer = await services(req).customers.register(
+      registerCustomerSchema.parse(req.body),
+    );
+    return reply.status(201).send(customer);
+  });
+
+  app.get("/customers", async (req) => services(req).customers.list());
+
+  app.get("/customers/:id", async (req) => services(req).customers.get(id(req)));
+
+  app.get("/customers/:id/history", async (req) =>
+    services(req).customers.history(id(req)),
+  );
 
   // ── policy lifecycle ───────────────────────────────────────────────────
   app.post("/quotes", async (req, reply) => {

@@ -173,6 +173,49 @@ describe("HTTP API", () => {
   });
 });
 
+describe("customers — the identity tying policies + claims together", () => {
+  it("registers a customer, links a quote to them, and returns their history", async () => {
+    const app = newApp();
+
+    const registerRes = await app.inject({
+      method: "POST",
+      url: "/customers",
+      payload: { name: "A. Sharma", email: "a.sharma@example.com" },
+    });
+    expect(registerRes.statusCode).toBe(201);
+    const { customerId } = registerRes.json();
+
+    const quoteRes = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: { ...quotePayload, customerId },
+    });
+    const { policyId } = quoteRes.json();
+    await app.inject({ method: "POST", url: `/policies/${policyId}/bind` });
+    await app.inject({ method: "POST", url: `/policies/${policyId}/issue` });
+
+    const historyRes = await app.inject({
+      method: "GET",
+      url: `/customers/${customerId}/history`,
+    });
+    expect(historyRes.statusCode).toBe(200);
+    const history = historyRes.json();
+    expect(history.customer.name).toBe("A. Sharma");
+    expect(history.policies.map((p: { policyId: string }) => p.policyId)).toEqual([
+      policyId,
+    ]);
+
+    await app.close();
+  });
+
+  it("returns 404 for an unknown customer", async () => {
+    const app = newApp();
+    const res = await app.inject({ method: "GET", url: "/customers/missing" });
+    expect(res.statusCode).toBe(404);
+    await app.close();
+  });
+});
+
 describe("multi-tenancy — the same API, routed to different connectors", () => {
   it("isolates data between two tenants sharing one running API", async () => {
     const registry = newRegistry();

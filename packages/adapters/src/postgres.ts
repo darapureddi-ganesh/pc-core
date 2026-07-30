@@ -7,6 +7,8 @@ import type {
   BillingRepository,
   Claim,
   ClaimsRepository,
+  Customer,
+  CustomerRepository,
   Handler,
   HandlersRepository,
   PolicyAggregate,
@@ -163,5 +165,35 @@ export class PostgresAssignmentLogRepository implements AssignmentLogRepository 
       .from(schema.assignmentLogStore)
       .where(eq(schema.assignmentLogStore.claimId, claimId));
     return rows.map((r) => r.data as AssignmentLogEntry);
+  }
+}
+
+export class PostgresCustomerRepository implements CustomerRepository {
+  constructor(private readonly db: Db) {}
+
+  async create(customer: Customer): Promise<void> {
+    await this.db
+      .insert(schema.customerStore)
+      .values({ customerId: customer.customerId, data: customer });
+  }
+
+  async get(customerId: string): Promise<Customer | undefined> {
+    const [row] = await this.db
+      .select()
+      .from(schema.customerStore)
+      .where(eq(schema.customerStore.customerId, customerId));
+    return row ? (row.data as Customer) : undefined;
+  }
+
+  async save(customer: Customer): Promise<void> {
+    await this.db
+      .update(schema.customerStore)
+      .set({ data: customer })
+      .where(eq(schema.customerStore.customerId, customer.customerId));
+  }
+
+  async list(): Promise<Customer[]> {
+    const rows = await this.db.select().from(schema.customerStore);
+    return rows.map((r) => r.data as Customer);
   }
 }

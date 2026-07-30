@@ -218,6 +218,36 @@ POST /claims/:id/reserve      {amount}
 POST /claims/:id/settle       {amount}
 ```
 
+## Customer identity — the thing that ties a person's history together
+
+Everything above anchors to a *policy*. Nothing anchored to a *person* until
+now: a policy's `insured` field was always just a descriptive name string used
+on documents, with no way to look up "everything about this customer" across
+renewals, multiple vehicles, or every claim on every one of their policies —
+a real gap against the "system of record" a production insurance core needs,
+and the prerequisite for any future customer-facing (as opposed to
+agent-facing) portal.
+
+`CustomerService` (`apps/api/src/service/customer-service.ts`) adds that
+identity: register a customer, link a policy to them at quote time
+(`customerId` on `QuoteInput`/`POST /quotes`), and pull their aggregated
+history back — every policy and every claim across all of them — in one call.
+Like every other domain here, storage is a Connector SDK port
+(`CustomerRepository`), with in-memory and Postgres adapters.
+
+```bash
+POST /customers                   {name, email?, phone?}   # -> {customerId, ...}
+GET  /customers                                             # directory
+GET  /customers/:id                                         # one customer
+GET  /customers/:id/history                                 # {customer, policies, claims}
+```
+
+The portal's **Customers** page (`app/customers/page.tsx`) makes this
+clickable: register a customer, paste their ID into the quote form's
+"Customer ID" field, and issue as many policies against them as you like —
+the history page then shows every one of those policies and every claim
+across them, aggregated live.
+
 ## Claim queue — triage, SLA, assignment
 
 Once a claim is on file, `ClaimQueueService` (`apps/api/src/service/claim-queue-service.ts`)

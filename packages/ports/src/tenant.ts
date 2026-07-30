@@ -4,6 +4,7 @@ import type {
   ClaimsRepository,
   HandlersRepository,
 } from "./claims.js";
+import type { CustomerRepository } from "./customer.js";
 import type { PolicyRepository } from "./policy.js";
 
 /**
@@ -21,6 +22,7 @@ export interface Connector {
   claims?: ClaimsRepository;
   handlers?: HandlersRepository;
   assignmentLog?: AssignmentLogRepository;
+  customers?: CustomerRepository;
 }
 
 export interface TenantInfo {

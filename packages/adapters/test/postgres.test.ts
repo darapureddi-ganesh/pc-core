@@ -1,9 +1,10 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { createDb } from "@pc-core/db/client";
-import type { Claim, Handler, PolicyAggregate } from "@pc-core/ports";
+import type { Claim, Customer, Handler, PolicyAggregate } from "@pc-core/ports";
 import {
   PostgresAssignmentLogRepository,
   PostgresClaimsRepository,
+  PostgresCustomerRepository,
   PostgresHandlersRepository,
   PostgresPolicyRepository,
 } from "../src/postgres.js";
@@ -24,7 +25,7 @@ describe.skipIf(!connectionString)("Postgres adapters — against a real databas
 
   beforeEach(async () => {
     await pool.query(
-      "truncate policy_store, billing_store, claim_store, handler_store, assignment_log_store",
+      "truncate policy_store, billing_store, claim_store, handler_store, assignment_log_store, customer_store",
     );
   });
 
@@ -124,5 +125,22 @@ describe.skipIf(!connectionString)("Postgres adapters — against a real databas
     const entries = await repo.listForClaim("22222222-2222-2222-2222-222222222222");
     expect(entries).toHaveLength(1);
     expect(entries[0]?.finalHandlerId).toBe("h-test");
+  });
+
+  it("round-trips a customer", async () => {
+    const repo = new PostgresCustomerRepository(db);
+    const customer: Customer = {
+      customerId: "33333333-3333-3333-3333-333333333333",
+      name: "A. Sharma",
+      email: "a.sharma@example.com",
+      createdAt: "2026-01-01T00:00:00Z",
+    };
+    await repo.create(customer);
+    expect((await repo.get(customer.customerId))?.name).toBe("A. Sharma");
+
+    await repo.save({ ...customer, phone: "+91-9999999999" });
+    expect((await repo.get(customer.customerId))?.phone).toBe("+91-9999999999");
+
+    expect(await repo.list()).toHaveLength(1);
   });
 });

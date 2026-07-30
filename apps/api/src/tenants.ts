@@ -3,11 +3,13 @@ import {
   InMemoryAssignmentLogRepository,
   InMemoryBillingRepository,
   InMemoryClaimsRepository,
+  InMemoryCustomerRepository,
   InMemoryHandlersRepository,
   InMemoryPolicyRepository,
   PostgresAssignmentLogRepository,
   PostgresBillingRepository,
   PostgresClaimsRepository,
+  PostgresCustomerRepository,
   PostgresHandlersRepository,
   PostgresPolicyRepository,
   RemoteHttpPolicyRepository,
@@ -24,6 +26,7 @@ import { PolicyService } from "./service/policy-service.js";
 import { BillingService } from "./service/billing-service.js";
 import { ClaimsService } from "./service/claims-service.js";
 import { ClaimQueueService } from "./service/claim-queue-service.js";
+import { CustomerService } from "./service/customer-service.js";
 import { DocumentService } from "./service/document-service.js";
 
 /** The full per-tenant service bundle the HTTP layer resolves and dispatches to. */
@@ -33,6 +36,7 @@ export interface TenantServices {
   billing: BillingService;
   claims: ClaimsService;
   claimQueue: ClaimQueueService;
+  customers: CustomerService;
   documents: DocumentService;
 }
 
@@ -93,8 +97,13 @@ function buildServices(
     connector.handlers ?? new InMemoryHandlersRepository(seedHandlers),
     connector.assignmentLog ?? new InMemoryAssignmentLogRepository(),
   );
+  const customers = new CustomerService(
+    connector.customers ?? new InMemoryCustomerRepository(),
+    policy,
+    claimsRepo,
+  );
   const documents = new DocumentService(policy);
-  return { info, policy, billing, claims, claimQueue, documents };
+  return { info, policy, billing, claims, claimQueue, customers, documents };
 }
 
 /**
@@ -111,6 +120,7 @@ export function buildPostgresConnector(db: Db, numberPrefix = "PC-2026"): Connec
     claims: new PostgresClaimsRepository(db),
     handlers: new PostgresHandlersRepository(db),
     assignmentLog: new PostgresAssignmentLogRepository(db),
+    customers: new PostgresCustomerRepository(db),
   };
 }
 

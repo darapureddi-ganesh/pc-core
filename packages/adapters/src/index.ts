@@ -4,6 +4,7 @@ export {
   InMemoryClaimsRepository,
   InMemoryHandlersRepository,
   InMemoryAssignmentLogRepository,
+  InMemoryCustomerRepository,
 } from "./in-memory.js";
 
 export { RemoteHttpPolicyRepository } from "./remote-http-policy.js";
@@ -14,4 +15,5 @@ export {
   PostgresClaimsRepository,
   PostgresHandlersRepository,
   PostgresAssignmentLogRepository,
+  PostgresCustomerRepository,
 } from "./postgres.js";

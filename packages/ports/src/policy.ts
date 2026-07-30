@@ -40,6 +40,9 @@ export interface PolicyAggregate {
   cancelledEffectiveFrom?: string;
   /** policyholder identity — descriptive, used by documents */
   insured?: { name: string };
+  /** links this policy to a Customer identity, so their history spans
+   * renewals, multiple vehicles, and every claim across every policy */
+  customerId?: string;
 }
 
 /** A reconstructed point-in-time view: the risk in effect and its re-rating. */
