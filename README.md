@@ -371,6 +371,39 @@ Any other model server works the same way — implement `LlmClient`'s single
 method (`complete(prompt): Promise<string>`) against it and pass that instead
 of `OllamaLlmClient` wherever `ClaimsAiProviders` is built.
 
+### Vehicle & document verification (VAHAN / DigiLocker)
+
+Two more Connector SDK ports follow the same "swappable provider, no hosted
+service shipped" shape, for fraud-prevention checks at FNOL:
+
+- **`VehicleRegistryPort`** (`packages/ports/src/vehicle-registry.ts`) — looks
+  up a vehicle's authoritative registration record (owner, chassis/engine
+  numbers, fitness/PUCC validity) by registration number, modeled on India's
+  national vehicle registry, VAHAN. `ClaimsService` uses it for an optional,
+  deterministic cross-check (`checkVehicleDetails` in `packages/claims-ai`) at
+  FNOL: if the tenant has a registry configured, the claimant's declared
+  chassis number, engine number, and owner name are compared against the
+  registry record, and any mismatch adds a `VEHICLE_DETAILS_MISMATCH` fraud
+  signal — pure and explainable, no LLM call. Skipped silently if no registry
+  is configured for the tenant, or if it has no record for the plate.
+- **`DocumentVerificationPort`** (`packages/ports/src/document-verification.ts`)
+  — a consent-based issuer-pull flow (`initiateConsent` → `fetchVerifiedDocument`)
+  for pulling a source-verified RC or DL, modeled on DigiLocker.
+
+Both ports ship **mock adapters only** — `MockVehicleRegistry` and
+`MockDigiLocker` (`packages/adapters`) — returning synthetic data for a
+handful of hardcoded records, with no real network calls. Real production use
+requires:
+
+- **VAHAN**: onboarding as an authorized requesting entity with NIC/MoRTH —
+  this is not a public API, and this repo does not implement or plan any real
+  call to `vahan.parivahan.gov.in`.
+- **DigiLocker**: DigiLocker Partner API approval (`api.digilocker.gov.in`).
+
+**Aadhaar/UIDAI integration is explicitly out of scope for this repo** — no
+Aadhaar authentication or e-KYC flow is implemented or planned. Swap in an
+authorized adapter behind either port for production use.
+
 ## Next (from the build plan)
 
 - **richer rating** — pro-rated endorsement premium, renewal terms

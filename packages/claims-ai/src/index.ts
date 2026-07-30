@@ -17,3 +17,10 @@ export type {
 
 export { OllamaLlmClient } from "./ollama.js";
 export type { OllamaClientOptions } from "./ollama.js";
+
+export { checkVehicleDetails } from "./vehicle-verification.js";
+export type {
+  DeclaredVehicleDetails,
+  RegistryVehicleDetails,
+  VehicleVerificationResult,
+} from "./vehicle-verification.js";

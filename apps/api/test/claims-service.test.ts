@@ -3,7 +3,11 @@ import {
   PolicyService,
   type QuoteCommand,
 } from "../src/service/policy-service.js";
-import { InMemoryPolicyRepository, InMemoryClaimsRepository } from "@pc-core/adapters";
+import {
+  InMemoryPolicyRepository,
+  InMemoryClaimsRepository,
+  MockVehicleRegistry,
+} from "@pc-core/adapters";
 import { ClaimsService } from "../src/service/claims-service.js";
 import type { MotorRisk } from "@pc-core/ports";
 
@@ -144,5 +148,139 @@ describe("claims-AI — IDP extraction and fraud scoring at FNOL", () => {
     expect(second.fraudSignals).toContain(
       "1 prior claim(s) already filed on this policy",
     );
+  });
+});
+
+describe("claims-AI — optional vehicle-registry (VAHAN-style) check at FNOL", () => {
+  const registryRisk: MotorRisk = {
+    vehicle: { cc: 1200, idv: 600_000, rtoZone: "A", age: 2, registrationNo: "KA01AB1234" },
+    policy: { ncb: 25 },
+    selectedAddOns: [],
+    coverages: { tpSelected: true },
+  };
+  const registryQuoteCmd: QuoteCommand = {
+    productCode: "PRIVATE_CAR",
+    term: { from: "2026-01-01", to: "2027-01-01" },
+    risk: registryRisk,
+    insured: { name: "A. Sharma" },
+  };
+
+  it("adds a VEHICLE_DETAILS_MISMATCH signal when the declared chassis number disagrees with the registry", async () => {
+    const registryPolicies = new PolicyService(new InMemoryPolicyRepository());
+    const registryClaims = new ClaimsService(
+      new InMemoryClaimsRepository(),
+      registryPolicies,
+      { vehicleRegistry: new MockVehicleRegistry() },
+    );
+    const { policyId } = await registryPolicies.quote(registryQuoteCmd);
+    await registryPolicies.bind(policyId);
+    await registryPolicies.issue(policyId);
+
+    const claim = await registryClaims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+      declaredVehicle: { chassisNumber: "SOMETHING-ELSE-ENTIRELY" },
+    });
+
+    expect(claim.fraudSignals).toContain(
+      "VEHICLE_DETAILS_MISMATCH: declared chassis number does not match the vehicle registry",
+    );
+    expect(claim.fraudScore).toBeGreaterThan(0);
+  });
+
+  it("adds no signal when declared vehicle details match the registry", async () => {
+    const registryPolicies = new PolicyService(new InMemoryPolicyRepository());
+    const registryClaims = new ClaimsService(
+      new InMemoryClaimsRepository(),
+      registryPolicies,
+      { vehicleRegistry: new MockVehicleRegistry() },
+    );
+    const { policyId } = await registryPolicies.quote(registryQuoteCmd);
+    await registryPolicies.bind(policyId);
+    await registryPolicies.issue(policyId);
+
+    const claim = await registryClaims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+      declaredVehicle: { chassisNumber: "MA3ERLF1S00123456" },
+    });
+
+    expect(claim.fraudSignals).toEqual([]);
+    expect(claim.fraudScore).toBe(0);
+  });
+
+  it("falls back to comparing the policy's insured name when no ownerName is declared", async () => {
+    const registryPolicies = new PolicyService(new InMemoryPolicyRepository());
+    const registryClaims = new ClaimsService(
+      new InMemoryClaimsRepository(),
+      registryPolicies,
+      { vehicleRegistry: new MockVehicleRegistry() },
+    );
+    const { policyId } = await registryPolicies.quote({
+      ...registryQuoteCmd,
+      insured: { name: "Totally Different Person" },
+    });
+    await registryPolicies.bind(policyId);
+    await registryPolicies.issue(policyId);
+
+    const claim = await registryClaims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+    });
+
+    expect(claim.fraudSignals).toContain(
+      "VEHICLE_DETAILS_MISMATCH: declared owner name does not match the vehicle registry",
+    );
+  });
+
+  it("skips the check silently when no vehicle registry is configured for the tenant", async () => {
+    const registryPolicies = new PolicyService(new InMemoryPolicyRepository());
+    const noRegistryClaims = new ClaimsService(
+      new InMemoryClaimsRepository(),
+      registryPolicies,
+    ); // no vehicleRegistry provider
+    const { policyId } = await registryPolicies.quote(registryQuoteCmd);
+    await registryPolicies.bind(policyId);
+    await registryPolicies.issue(policyId);
+
+    const claim = await noRegistryClaims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+      declaredVehicle: { chassisNumber: "SOMETHING-ELSE-ENTIRELY" },
+    });
+
+    expect(claim.fraudSignals).toEqual([]);
+    expect(claim.fraudScore).toBe(0);
+  });
+
+  it("skips the check silently when the registry has no record for the plate", async () => {
+    const noRecordPolicies = new PolicyService(new InMemoryPolicyRepository());
+    const noRecordClaims = new ClaimsService(
+      new InMemoryClaimsRepository(),
+      noRecordPolicies,
+      { vehicleRegistry: new MockVehicleRegistry() },
+    );
+    const { policyId } = await noRecordPolicies.quote({
+      ...registryQuoteCmd,
+      risk: {
+        ...registryRisk,
+        vehicle: { ...registryRisk.vehicle, registrationNo: "XX99ZZ0000" },
+      },
+    });
+    await noRecordPolicies.bind(policyId);
+    await noRecordPolicies.issue(policyId);
+
+    const claim = await noRecordClaims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+      declaredVehicle: { chassisNumber: "ANYTHING" },
+    });
+
+    expect(claim.fraudSignals).toEqual([]);
   });
 });

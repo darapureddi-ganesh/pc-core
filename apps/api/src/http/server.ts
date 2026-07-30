@@ -54,6 +54,15 @@ const fnolSchema = z.object({
   incidentDate: z.string(),
   cause: z.string(),
   rawIntakeText: z.string().optional(),
+  /** vehicle identity fields as declared by the claimant — checked against
+   * this tenant's VehicleRegistryPort (if configured) for a mismatch signal */
+  declaredVehicle: z
+    .object({
+      chassisNumber: z.string().optional(),
+      engineNumber: z.string().optional(),
+      ownerName: z.string().optional(),
+    })
+    .optional(),
 });
 const amountSchema = z.object({ amount: z.number() });
 const classifySchema = z.object({ policyholderId: z.string().optional() });
