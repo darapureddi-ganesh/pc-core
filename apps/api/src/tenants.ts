@@ -6,6 +6,7 @@ import {
   InMemoryCustomerRepository,
   InMemoryHandlersRepository,
   InMemoryPolicyRepository,
+  MockVehicleRegistry,
   PostgresAssignmentLogRepository,
   PostgresBillingRepository,
   PostgresClaimsRepository,
@@ -230,6 +231,12 @@ export async function buildDemoRegistry(
 ): Promise<TenantRegistry> {
   const registry = new TenantRegistry();
 
+  // Demo tenant gets a VAHAN-style vehicle registry wired in, so filing a
+  // claim with mismatched vehicle details produces a live
+  // VEHICLE_DETAILS_MISMATCH fraud signal (see MockVehicleRegistry's
+  // hardcoded plates, e.g. KA01AB1234) — mock only, no real network call.
+  const demoClaimsAi: ClaimsAiProviders = { vehicleRegistry: new MockVehicleRegistry() };
+
   if (databaseUrl) {
     const { db } = createDb(databaseUrl);
     await seedPostgresHandlers(db, DEMO_HANDLERS);
@@ -237,13 +244,14 @@ export async function buildDemoRegistry(
       { tenantId: "demo", name: "OpenCover demo (Postgres)" },
       buildPostgresConnector(db),
       DEMO_API_KEY,
+      demoClaimsAi,
     );
   } else {
     registry.register(
       { tenantId: "demo", name: "OpenCover demo (in-memory)" },
       { policy: new InMemoryPolicyRepository("PC-2026") },
       DEMO_API_KEY,
-      undefined,
+      demoClaimsAi,
       DEMO_HANDLERS,
     );
   }
