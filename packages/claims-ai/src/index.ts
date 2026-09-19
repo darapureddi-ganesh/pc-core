@@ -8,6 +8,7 @@ export {
   RegexDocumentExtractor,
   HeuristicFraudScorer,
   LlmDocumentExtractor,
+  LlmFraudScorer,
 } from "./providers.js";
 export type {
   DocumentExtractor,

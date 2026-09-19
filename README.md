@@ -343,8 +343,11 @@ Two pillars of the claims-technology matrix run as pure services behind
   puts any `LlmClient` (Claude, GPT, a local model) behind the same interface —
   strict-JSON prompting, safe degradation on a malformed or failed reply.
 - **Fraud scoring** — `HeuristicFraudScorer` (the default: repeat-claim and
-  early-incident signals) against `FraudScorer`, ready for a real graph/anomaly
-  model behind the same shape.
+  early-incident signals) against `FraudScorer`, or `LlmFraudScorer`, a
+  reference adapter that has any `LlmClient` reason over the same signals and
+  return a score + explanation as strict JSON — falling back to the
+  deterministic heuristic on a malformed reply or a failed model call, so
+  fraud detection never goes silent because a model had a bad day.
 
 OpenCover ships no hosted model — these are honest v1s proving the pillars
 end-to-end and defining the seam a company's own model plugs into per tenant
@@ -355,12 +358,12 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 
 `OllamaLlmClient` (`packages/claims-ai/src/ollama.ts`) is a concrete `LlmClient`
 adapter for a self-hosted [Ollama](https://ollama.com) server — pull any
-open-source model (`ollama pull llama3.1`) and point `LlmDocumentExtractor` at
-it. This is wired all the way through self-serve onboarding: pass
-`ollamaModel` (and optionally `ollamaBaseUrl`) to `POST /connectors/register`,
-or fill in the same fields on the portal's **Connectors** page, and that
-tenant's claim intake runs your model's extraction instead of the default
-regex extractor — no code change.
+open-source model (`ollama pull llama3.1`) and point `LlmDocumentExtractor`
+and/or `LlmFraudScorer` at it. This is wired all the way through self-serve
+onboarding: pass `ollamaModel` (and optionally `ollamaBaseUrl`) to
+`POST /connectors/register`, or fill in the same fields on the portal's
+**Connectors** page, and that tenant's claim intake runs your model's
+extraction AND fraud scoring instead of the defaults — no code change.
 
 ```bash
 curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \

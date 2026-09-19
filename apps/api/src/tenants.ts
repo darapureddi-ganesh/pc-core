@@ -18,6 +18,7 @@ import {
 import { createDb, type Db } from "@pc-core/db/client";
 import {
   LlmDocumentExtractor,
+  LlmFraudScorer,
   OllamaLlmClient,
   type OllamaClientOptions,
 } from "@pc-core/claims-ai";
@@ -177,10 +178,11 @@ export class TenantRegistry {
    * the policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository)
    * and gets back a tenant ID + API key. No code changes on OpenCover's side.
    *
-   * Optionally also points claims-AI's IDP extraction at a self-hosted Ollama
-   * model for this tenant (see @pc-core/claims-ai's OllamaLlmClient) instead
-   * of the default regex extractor — OpenCover ships no hosted model of its
-   * own, so this is how a company brings their own.
+   * Optionally also points claims-AI's IDP extraction AND fraud scoring at a
+   * self-hosted Ollama model for this tenant (see @pc-core/claims-ai's
+   * OllamaLlmClient / LlmFraudScorer) instead of the default regex extractor
+   * and heuristic scorer — OpenCover ships no hosted model of its own, so
+   * this is how a company brings their own.
    */
   registerConnector(
     name: string,
@@ -190,7 +192,10 @@ export class TenantRegistry {
     const info: TenantInfo = { tenantId: newTenantId(name), name };
     const apiKey = newApiKey();
     const claimsAi: ClaimsAiProviders | undefined = ollama
-      ? { extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)) }
+      ? {
+          extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)),
+          fraudScorer: new LlmFraudScorer(new OllamaLlmClient(ollama)),
+        }
       : undefined;
     this.register(
       info,

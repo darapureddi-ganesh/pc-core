@@ -66,6 +66,55 @@ export class LlmDocumentExtractor implements DocumentExtractor {
   }
 }
 
+const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
+
+/**
+ * Reference adapter showing how to put a real LLM behind `FraudScorer`,
+ * reasoning over the same signals the heuristic scorer sees (prior claims on
+ * the policy, days since policy inception) instead of applying fixed weights.
+ * Asks for strict JSON and validates the reply; a malformed reply OR a
+ * failed model call falls back to the deterministic `scoreFraudRisk` — fraud
+ * detection never goes silent just because a model had a bad day, and FNOL
+ * is never blocked by it. This is the template a company fills in with their
+ * chosen model (Claude, GPT, a local Ollama model) — OpenCover itself ships
+ * no hosted model.
+ */
+export class LlmFraudScorer implements FraudScorer {
+  constructor(private readonly llm: LlmClient) {}
+
+  async score(input: FraudInput): Promise<FraudResult> {
+    const prompt = [
+      "You are a P&C motor-insurance fraud analyst assessing a newly-filed claim.",
+      "Return ONLY strict JSON of the form:",
+      '{"score":number (0 to 1),"signals":string[]}',
+      "Signals about this claim:",
+      `- prior claims already filed on this policy: ${input.priorClaimsOnPolicy}`,
+      `- days between policy inception and the incident date: ${input.daysSincePolicyStart}`,
+    ].join("\n");
+
+    let reply: string;
+    try {
+      reply = await this.llm.complete(prompt);
+    } catch {
+      return scoreFraudRisk(input);
+    }
+    return parseFraudResult(reply) ?? scoreFraudRisk(input);
+  }
+}
+
+function parseFraudResult(reply: string): FraudResult | null {
+  try {
+    const json = JSON.parse(isolateJson(reply)) as Partial<FraudResult>;
+    if (typeof json.score !== "number" || !Array.isArray(json.signals)) {
+      return null;
+    }
+    const signals = json.signals.filter((s): s is string => typeof s === "string");
+    return { score: clamp01(json.score), signals };
+  } catch {
+    return null;
+  }
+}
+
 function parseExtraction(reply: string): ExtractedFields {
   try {
     const json = JSON.parse(isolateJson(reply)) as Partial<ExtractedFields>;
