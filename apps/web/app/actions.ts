@@ -10,6 +10,7 @@ import type {
   QueueStatus,
   QuoteInput,
   QuoteResult,
+  RenewalResult,
 } from "./types";
 import { DEFAULT_TENANT, TENANT_COOKIE } from "../lib/tenant";
 
@@ -70,6 +71,16 @@ export async function bindPolicy(policyId: string): Promise<Policy> {
 
 export async function issuePolicy(policyId: string): Promise<Policy> {
   const res = await fetch(`${API}/policies/${policyId}/issue`, {
+    method: "POST",
+    headers: await tenantHeaders(),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export async function renewPolicy(policyId: string): Promise<RenewalResult> {
+  const res = await fetch(`${API}/policies/${policyId}/renew`, {
     method: "POST",
     headers: await tenantHeaders(),
     cache: "no-store",

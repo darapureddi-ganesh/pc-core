@@ -7,4 +7,4 @@ export type {
   Transaction,
 } from "./types.js";
 
-export { contains, buildTimeline, asOf, snapshotAsOf } from "./temporal.js";
+export { contains, buildTimeline, asOf, snapshotAsOf, addOneYear } from "./temporal.js";

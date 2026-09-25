@@ -36,6 +36,7 @@ import { ClaimsService } from "./service/claims-service.js";
 import { ClaimQueueService } from "./service/claim-queue-service.js";
 import { CustomerService } from "./service/customer-service.js";
 import { DocumentService } from "./service/document-service.js";
+import { RenewalService } from "./service/renewal-service.js";
 
 /** The full per-tenant service bundle the HTTP layer resolves and dispatches to. */
 export interface TenantServices {
@@ -46,6 +47,7 @@ export interface TenantServices {
   claimQueue: ClaimQueueService;
   customers: CustomerService;
   documents: DocumentService;
+  renewals: RenewalService;
 }
 
 /** A handful of demo adjusters seeded for the "demo" tenant's claim queue. */
@@ -114,7 +116,8 @@ function buildServices(
     claimsRepo,
   );
   const documents = new DocumentService(policy);
-  return { info, policy, billing, claims, claimQueue, customers, documents };
+  const renewals = new RenewalService(policy, claimsRepo);
+  return { info, policy, billing, claims, claimQueue, customers, documents, renewals };
 }
 
 /**

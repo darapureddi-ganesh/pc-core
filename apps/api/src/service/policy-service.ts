@@ -28,6 +28,8 @@ export interface QuoteCommand {
   insured?: { name: string };
   /** links the resulting policy to a Customer identity (see CustomerService) */
   customerId?: string;
+  /** the expiring policy this one renews, if any (see RenewalService) */
+  renewedFromPolicyId?: string;
 }
 
 /**
@@ -57,6 +59,7 @@ export class PolicyService {
       transactions: [],
       insured: cmd.insured,
       customerId: cmd.customerId,
+      renewedFromPolicyId: cmd.renewedFromPolicyId,
     };
     await this.repo.create(policy);
     return { policyId: policy.policyId, rating };

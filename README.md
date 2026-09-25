@@ -144,6 +144,31 @@ curl -sX POST localhost:3000/quotes -H 'content-type: application/json' -d '{
 Then `POST /policies/:id/bind`, `/issue`, `/endorsements`, and
 `GET /policies/:id?asOf=2026-06-01` to read the re-rated slice in effect.
 
+### Renewal
+
+`POST /policies/:id/renew` quotes a fresh policy carrying the risk forward
+one year — vehicle age +1, term rolled by `addOneYear` (`@pc-core/domain`),
+and NCB progressed per the product's own `ncbScale` table
+(`nextNcbTier`, `@pc-core/config-engine`): claim-free steps up one tier,
+any claim during the expiring term resets to the bottom tier. The result
+links back to the expiring policy via `renewedFromPolicyId`.
+
+```bash
+curl -sX POST localhost:3000/policies/<id>/renew -H 'authorization: Bearer pk_demo'
+# -> { "renewalPolicyId": "...", "previousPolicyId": "...",
+#      "rating": { ...  "total": 18721.88 },
+#      "term": { "from": "2027-01-01", "to": "2028-01-01" },
+#      "ncb": { "previous": 25, "renewed": 35, "hadClaimInTerm": false } }
+```
+
+Renewal is deliberately not a parallel lifecycle: the returned
+`renewalPolicyId` is an ordinary `QUOTED` policy — `bind`/`issue` it through
+the exact same routes as any new business (the portal's "Renew this policy"
+button does exactly that). **One honest simplification**: "any claim resets
+NCB" is coarser than real Indian motor NCB rules, which only reset on an
+own-damage claim, not a third-party-only one — this model doesn't yet
+distinguish the two (`Claim.cause` is free text).
+
 ## Agent portal (P4)
 
 `apps/web` is a Next.js portal that drives the whole flow — enter a vehicle, see
@@ -507,7 +532,7 @@ authorized adapter behind either port for production use.
 
 ## Next (from the build plan)
 
-- **richer rating** — pro-rated endorsement premium, renewal terms
+- **richer rating** — pro-rated endorsement premium (renewal now exists — see "Renewal" above)
 - **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
 - **portal** — claims (FNOL), the claim queue, a login screen, and tenant switching now all surface in the agent portal (see "Agent portal (P4)")
 - **CI** — GitHub Actions now runs typecheck + tests + the portal build on every push/PR (`.github/workflows/ci.yml`)

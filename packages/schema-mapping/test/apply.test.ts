@@ -123,6 +123,20 @@ describe("applyPolicyEnvelopeMapping — reproduces the hand-written Beta adapte
     expect((roundTripped as Record<string, unknown>).custId).toBe("cust-42");
   });
 
+  it("round-trips a renewedFromPolicyId when the mapping declares it", () => {
+    const mappingWithRenewal = {
+      ...betaMapping,
+      fields: { ...betaMapping.fields, renewedFromPolicyId: "renewedFromId" },
+    };
+    const policy = applyPolicyEnvelopeMapping(
+      { ...betaRecord, renewedFromId: "pol-0" },
+      mappingWithRenewal,
+    );
+    expect(policy.renewedFromPolicyId).toBe("pol-0");
+    const roundTripped = unapplyPolicyEnvelopeMapping(policy, mappingWithRenewal);
+    expect((roundTripped as Record<string, unknown>).renewedFromId).toBe("pol-0");
+  });
+
   it("round-trips through unapply back to the original shape", () => {
     const policy = applyPolicyEnvelopeMapping(betaRecord, betaMapping);
     const roundTripped = unapplyPolicyEnvelopeMapping(policy, betaMapping);

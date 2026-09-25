@@ -73,6 +73,9 @@ export function applyPolicyEnvelopeMapping(
   // (see PolicyService.quote / CustomerService.history) — without an
   // explicit mapping entry a mapped connector would silently drop it.
   const customerId = f.customerId ? getPath(source, f.customerId) : undefined;
+  const renewedFromPolicyId = f.renewedFromPolicyId
+    ? getPath(source, f.renewedFromPolicyId)
+    : undefined;
 
   const policy: PolicyAggregate = {
     policyId: getPath(source, f.policyId) as string,
@@ -90,6 +93,7 @@ export function applyPolicyEnvelopeMapping(
     ...(typeof insuredName === "string" && { insured: { name: insuredName } }),
     ...(typeof cancelledEffectiveFrom === "string" && { cancelledEffectiveFrom }),
     ...(typeof customerId === "string" && { customerId }),
+    ...(typeof renewedFromPolicyId === "string" && { renewedFromPolicyId }),
   };
   return policy;
 }
@@ -145,6 +149,9 @@ export function unapplyPolicyEnvelopeMapping(
   }
   if (f.customerId && policy.customerId) {
     setPath(out, f.customerId, policy.customerId);
+  }
+  if (f.renewedFromPolicyId && policy.renewedFromPolicyId) {
+    setPath(out, f.renewedFromPolicyId, policy.renewedFromPolicyId);
   }
   return out;
 }

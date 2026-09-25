@@ -10,6 +10,7 @@ import {
   issuePolicy,
   payOutstanding,
   quotePolicy,
+  renewPolicy,
 } from "./actions";
 import { API_PUBLIC_BASE } from "./config";
 import type {
@@ -18,6 +19,7 @@ import type {
   Claim,
   Policy,
   QuoteResult,
+  RenewalResult,
 } from "./types";
 
 const ADDONS: Array<{ code: string; label: string }> = [
@@ -73,6 +75,7 @@ export default function Page() {
   const [claim, setClaim] = useState<Claim | null>(null);
   const [ruleApplied, setRuleApplied] = useState<string | null>(null);
   const [assignResult, setAssignResult] = useState<AssignResult | null>(null);
+  const [renewal, setRenewal] = useState<RenewalResult | null>(null);
 
   const phase: "idle" | "quoted" | "bound" | "issued" =
     policy?.status === "ISSUED"
@@ -120,6 +123,7 @@ export default function Page() {
       setClaim(null);
       setRuleApplied(null);
       setAssignResult(null);
+      setRenewal(null);
     });
   };
 
@@ -139,6 +143,26 @@ export default function Page() {
     billing &&
     run(async () => {
       setBilling(await payOutstanding(quote.policyId, billing.outstanding));
+    });
+
+  const onRenew = () =>
+    policy && run(async () => setRenewal(await renewPolicy(policy.policyId)));
+
+  // Renewal reuses the ordinary quote -> bind -> issue lifecycle: this just
+  // drives that same pair of calls against the renewal's own policyId, then
+  // swaps the whole view over to it, same as finishing any other issue.
+  const onBindIssueRenewal = () =>
+    renewal &&
+    run(async () => {
+      await bindPolicy(renewal.renewalPolicyId);
+      const issued = await issuePolicy(renewal.renewalPolicyId);
+      setQuote({ policyId: renewal.renewalPolicyId, rating: renewal.rating });
+      setPolicy(issued);
+      setBilling(await getBillingStatement(renewal.renewalPolicyId));
+      setRenewal(null);
+      setClaim(null);
+      setRuleApplied(null);
+      setAssignResult(null);
     });
 
   const onFileClaim = (e: React.FormEvent) => {
@@ -470,6 +494,41 @@ export default function Page() {
                       )}
                     </div>
                   )}
+
+                  <div className="trace">
+                    {!renewal ? (
+                      <button className="secondary" onClick={onRenew} disabled={busy}>
+                        {busy ? "Quoting renewal…" : "Renew this policy"}
+                      </button>
+                    ) : (
+                      <>
+                        <div>
+                          Renewal quoted: cover {renewal.term.from} →{" "}
+                          {renewal.term.to}, premium{" "}
+                          <strong>{inr(renewal.rating.total)}</strong>
+                        </div>
+                        <div>
+                          NCB {renewal.ncb.previous}% →{" "}
+                          <strong
+                            className={
+                              renewal.ncb.hadClaimInTerm ? "fraud-flag" : undefined
+                            }
+                          >
+                            {renewal.ncb.renewed}%
+                          </strong>
+                          {renewal.ncb.hadClaimInTerm &&
+                            " (reset — a claim was filed on the expiring term)"}
+                        </div>
+                        <button
+                          className="primary"
+                          onClick={onBindIssueRenewal}
+                          disabled={busy}
+                        >
+                          {busy ? "Issuing renewal…" : "Bind & issue the renewal"}
+                        </button>
+                      </>
+                    )}
+                  </div>
 
                   <div className="claim-block">
                     {!claim ? (

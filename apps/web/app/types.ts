@@ -40,6 +40,15 @@ export interface Policy {
   productVersion: string;
   status: string;
   term: { from: string; to: string };
+  renewedFromPolicyId?: string;
+}
+
+export interface RenewalResult {
+  renewalPolicyId: string;
+  previousPolicyId: string;
+  rating: Rating;
+  term: { from: string; to: string };
+  ncb: { previous: number; renewed: number; hadClaimInTerm: boolean };
 }
 
 export interface Installment {
