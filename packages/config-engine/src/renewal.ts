@@ -12,11 +12,16 @@ export function nextNcbTier(
   ncbScale: Record<string, number>,
   hadClaimInTerm: boolean,
 ): number {
-  if (hadClaimInTerm) return 0;
-
   const tiers = Object.keys(ncbScale)
     .map(Number)
     .sort((a, b) => a - b);
+
+  if (hadClaimInTerm) {
+    // the product's own bottom tier, not a hardcoded 0 — a product whose
+    // scale doesn't start at 0 would otherwise reset to an unpriced NCB
+    return tiers[0] ?? 0;
+  }
+
   const index = tiers.indexOf(currentNcb);
   if (index === -1 || index === tiers.length - 1) {
     return currentNcb;

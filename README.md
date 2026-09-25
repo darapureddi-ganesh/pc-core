@@ -26,8 +26,8 @@ off, and links straight to the generated **policy schedule** and
 **Form 51 certificate**. Every number and every document field traces back
 to `packages/products/private_car.2026.1.yaml`.
 
-(`pnpm demo` runs a separate, non-interactive CLI walkthrough of the rating
-engine and the temporal timeline — no servers needed.)
+`pnpm test` runs the two proofs below (no Postgres needed); `pnpm demo` prints
+a quote breakdown and a timeline reconstruction from the CLI — no servers.
 
 ## What's here
 
@@ -57,14 +57,6 @@ The **domain** and **config-engine** packages import nothing from a framework
 or database — they take plain objects and return plain objects. That's what
 makes the rating logic testable with golden files and portable to a future
 channel (a BimaSugam / ONDC front end, say).
-
-## Quick start
-
-```bash
-pnpm install
-pnpm test      # runs the two proofs below — no Postgres needed
-pnpm demo      # prints a quote breakdown + a timeline reconstruction
-```
 
 ## The two proofs
 
@@ -115,7 +107,7 @@ psql pc_core_dev -f packages/db/migrations/0002_jsonb_adapters.sql
 DATABASE_URL=postgres://localhost/pc_core_dev pnpm --filter @pc-core/api start
 ```
 
-## Policy lifecycle API (P3)
+## Policy lifecycle API
 
 `apps/api` wires the two pure packages into a lifecycle service — quote → bind →
 issue → endorse → cancel, plus as-of reconstruction — behind a Fastify HTTP
@@ -169,7 +161,7 @@ NCB" is coarser than real Indian motor NCB rules, which only reset on an
 own-damage claim, not a third-party-only one — this model doesn't yet
 distinguish the two (`Claim.cause` is free text).
 
-## Agent portal (P4)
+## Agent portal
 
 `apps/web` is a Next.js portal that drives the whole flow — enter a vehicle, see
 the priced breakdown, bind, issue, pay the invoice, and open the generated
@@ -227,7 +219,7 @@ freshly-registered tenant's issued policies come back numbered by
 **that system's own scheme** (`BETA-000001`), not PC Core's — proof the
 connector is genuinely routed, not just relabeled.
 
-## Billing & claims (P5)
+## Billing & claims
 
 Issuing a policy auto-creates a premium **invoice** on a double-entry ledger
 (`packages/billing`); payments draw the receivable down and balances are always
@@ -302,7 +294,7 @@ adjuster roster and audit store slot in the same way its policy/claims data
 does; the in-memory defaults (`@pc-core/adapters`) seed a few demo handlers
 for the `demo` tenant.
 
-## Documents & reporting (P6)
+## Documents & reporting
 
 Which documents a product issues is config (`product.forms` in the YAML);
 rendering is pure (`packages/forms`). Data is gathered by reconstructing the
@@ -403,9 +395,9 @@ exact hand-written mapping above) but not everything; a sufficiently unusual
 schema still needs a hand-written adapter, same as before this package
 existed.
 
-## Claims-AI (from the technology matrix)
+## Claims-AI
 
-Two pillars of the claims-technology matrix run as pure services behind
+Two claims-technology pillars run as pure services behind
 **swappable provider interfaces** — `DocumentExtractor` and `FraudScorer`
 (`packages/claims-ai`) — so `ClaimsService` never depends on a concrete model:
 
@@ -530,11 +522,12 @@ requires:
 Aadhaar authentication or e-KYC flow is implemented or planned. Swap in an
 authorized adapter behind either port for production use.
 
-## Next (from the build plan)
+## Next
 
-- **richer rating** — pro-rated endorsement premium (renewal now exists — see "Renewal" above)
-- **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
-- **portal** — claims (FNOL), the claim queue, a login screen, and tenant switching now all surface in the agent portal (see "Agent portal (P4)")
-- **CI** — GitHub Actions now runs typecheck + tests + the portal build on every push/PR (`.github/workflows/ci.yml`)
-
-See the design note and build plan for the full picture.
+- **richer rating** — pro-rated endorsement premium
+- **infra** — materialize the transaction-log domain model into the normalized
+  `policy_period` rows so the Postgres GiST exclusion constraint is actually
+  enforced; a `@pc-core/contracts` types package shared by api + web; wire
+  claim settlements into the billing ledger; persist the tenant registry
+  itself (currently in-memory, so registered connectors don't survive a
+  restart)

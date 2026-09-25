@@ -24,4 +24,10 @@ describe("nextNcbTier — renewal NCB progression, read from the product's own s
   it("leaves an unrecognized current NCB unchanged rather than guessing", () => {
     expect(nextNcbTier(17, ncbScale, false)).toBe(17);
   });
+
+  it("resets to the product's OWN bottom tier, not a hardcoded 0, when the scale doesn't start at 0", () => {
+    const customScale = { "10": 0.1, "30": 0.3, "60": 0.6 };
+    expect(nextNcbTier(60, customScale, true)).toBe(10);
+    expect(nextNcbTier(30, customScale, true)).toBe(10);
+  });
 });

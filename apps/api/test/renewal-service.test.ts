@@ -56,6 +56,28 @@ describe("RenewalService — quoteRenewal", () => {
     expect(renewalPolicy.customerId).toBe("cust-1");
   });
 
+  it("carries a mid-term endorsement forward into the renewal, not the stale base risk", async () => {
+    const policyId = await issued();
+    // Mid-term: IDV raised and NCB corrected, effective partway through the term.
+    await policies.endorse({
+      policyId,
+      effectiveFrom: "2026-06-01",
+      change: { op: "setIdv", idv: 900_000 },
+    });
+    await policies.endorse({
+      policyId,
+      effectiveFrom: "2026-08-01",
+      change: { op: "setNcb", ncb: 45 },
+    });
+
+    const result = await renewals.quoteRenewal(policyId);
+    // NCB progression must run from the ENDORSED 45%, not the original 25%.
+    expect(result.ncb).toEqual({ previous: 45, renewed: 50, hadClaimInTerm: false });
+
+    const renewalPolicy = await policies.get(result.renewalPolicyId);
+    expect(renewalPolicy.base.vehicle.idv).toBe(900_000); // the endorsed IDV survived
+  });
+
   it("resets NCB to 0 when a claim was filed during the expiring term", async () => {
     const policyId = await issued();
     await claims.fnol({ policyId, incidentDate: "2026-06-01", cause: "collision" });

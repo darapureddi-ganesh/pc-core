@@ -38,18 +38,35 @@ export class RenewalService {
       throw new ServiceError("only an issued policy can be renewed", "CONFLICT");
     }
 
+    // The risk to renew is the one actually in force at the END of the
+    // expiring term, not policy.base (the risk as issued at inception) —
+    // any mid-term endorsement (an IDV bump, an NCB correction, an added
+    // add-on) must carry forward too. Reconstructing as-of the latest
+    // transaction's effective date (or the term start, if none) picks up
+    // every endorsement's cumulative effect, since nothing changes again
+    // before the term ends.
+    const lastKnownDate = policy.transactions.reduce(
+      (max, t) => (t.effectiveFrom > max ? t.effectiveFrom : max),
+      policy.term.from,
+    );
+    const currentSnapshot = await this.policies.getAsOf(policyId, lastKnownDate);
+    if (!currentSnapshot) {
+      throw new ServiceError("no slice in effect at the end of the term", "CONFLICT");
+    }
+    const currentRisk = currentSnapshot.risk;
+
     const { product } = resolveProduct(policy.productCode, policy.productVersion);
     const claimsOnPolicy = (await this.claims.list()).filter(
       (c) => c.policyId === policyId,
     );
     const hadClaimInTerm = claimsOnPolicy.length > 0;
-    const previousNcb = policy.base.policy.ncb;
+    const previousNcb = currentRisk.policy.ncb;
     const renewedNcb = nextNcbTier(previousNcb, product.tables.ncbScale, hadClaimInTerm);
 
     const term = { from: policy.term.to, to: addOneYear(policy.term.to) };
     const risk: MotorRisk = {
-      ...policy.base,
-      vehicle: { ...policy.base.vehicle, age: policy.base.vehicle.age + 1 },
+      ...currentRisk,
+      vehicle: { ...currentRisk.vehicle, age: currentRisk.vehicle.age + 1 },
       policy: { ncb: renewedNcb },
       // a renewal is never a "brand-new vehicle" 3-year TP policy, even if
       // the expiring one was
