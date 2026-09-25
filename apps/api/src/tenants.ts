@@ -20,7 +20,9 @@ import {
   LlmDocumentExtractor,
   LlmFraudScorer,
   OllamaLlmClient,
+  OpenAiCompatibleLlmClient,
   type OllamaClientOptions,
+  type OpenAiCompatibleClientOptions,
 } from "@pc-core/claims-ai";
 import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
@@ -224,6 +226,26 @@ export const DEMO_API_KEY = "pk_demo";
 export const BETA_API_KEY = "pk_beta";
 
 /**
+ * Reads LOCAL_LLM_MODEL / LOCAL_LLM_BASE_URL / LOCAL_LLM_API_KEY from the
+ * environment. Set only when a company running OpenCover on their OWN
+ * infrastructure has a local model server up (llama.cpp's llama-server, LM
+ * Studio, vLLM, Ollama's OpenAI-compatible endpoint — anything speaking the
+ * standard chat-completions shape) and wants their primary tenant's own
+ * claims-AI (fraud scoring, IDP extraction) to use it instead of the
+ * built-in deterministic defaults. No cloud call, no model shipped by
+ * OpenCover — see OpenAiCompatibleLlmClient.
+ */
+function localLlmOptionsFromEnv(): OpenAiCompatibleClientOptions | undefined {
+  const model = process.env.LOCAL_LLM_MODEL;
+  if (!model) return undefined;
+  return {
+    model,
+    baseUrl: process.env.LOCAL_LLM_BASE_URL,
+    apiKey: process.env.LOCAL_LLM_API_KEY,
+  };
+}
+
+/**
  * The demo registry: a "demo" tenant (Postgres-backed when DATABASE_URL is
  * set, in-memory otherwise), and a "beta" tenant whose policy data lives
  * entirely in a separate process (apps/mock-insurer) reached only over HTTP,
@@ -233,6 +255,7 @@ export const BETA_API_KEY = "pk_beta";
 export async function buildDemoRegistry(
   betaBaseUrl = process.env.BETA_URL ?? "http://127.0.0.1:4000",
   databaseUrl = process.env.DATABASE_URL,
+  localLlm = localLlmOptionsFromEnv(),
 ): Promise<TenantRegistry> {
   const registry = new TenantRegistry();
 
@@ -240,7 +263,17 @@ export async function buildDemoRegistry(
   // claim with mismatched vehicle details produces a live
   // VEHICLE_DETAILS_MISMATCH fraud signal (see MockVehicleRegistry's
   // hardcoded plates, e.g. KA01AB1234) — mock only, no real network call.
-  const demoClaimsAi: ClaimsAiProviders = { vehicleRegistry: new MockVehicleRegistry() };
+  // If a local model server is configured (see localLlmOptionsFromEnv), its
+  // fraud scoring and IDP extraction run behind that model too — rules stay
+  // authoritative either way (see LlmFraudScorer/checkVehicleDetails's
+  // fallback-to-deterministic behavior).
+  const demoClaimsAi: ClaimsAiProviders = {
+    vehicleRegistry: new MockVehicleRegistry(),
+    ...(localLlm && {
+      extractor: new LlmDocumentExtractor(new OpenAiCompatibleLlmClient(localLlm)),
+      fraudScorer: new LlmFraudScorer(new OpenAiCompatibleLlmClient(localLlm)),
+    }),
+  };
 
   if (databaseUrl) {
     const { db } = createDb(databaseUrl);

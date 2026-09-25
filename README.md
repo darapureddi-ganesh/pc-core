@@ -374,6 +374,38 @@ Any other model server works the same way — implement `LlmClient`'s single
 method (`complete(prompt): Promise<string>`) against it and pass that instead
 of `OllamaLlmClient` wherever `ClaimsAiProviders` is built.
 
+### Running your own local model, on your own infrastructure
+
+The Ollama flow above is for onboarding an **external** company's connector.
+A company running OpenCover itself — on their own servers, with no internet
+egress required — can instead point their own primary tenant's claims-AI at
+a local model server with three environment variables, no code change:
+
+```bash
+LOCAL_LLM_MODEL=qwen2.5-3b-instruct
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8080   # optional, defaults to this
+LOCAL_LLM_API_KEY=...                      # optional, most local servers ignore it
+```
+
+`OpenAiCompatibleLlmClient` (`packages/claims-ai/src/openai-compatible.ts`)
+speaks the standard OpenAI chat-completions HTTP shape that most local model
+runtimes implement — llama.cpp's `llama-server`, LM Studio, vLLM,
+text-generation-webui, and Ollama's own `/v1/chat/completions` endpoint all
+work against it unmodified. When `LOCAL_LLM_MODEL` is set, the demo tenant's
+`LlmDocumentExtractor` and `LlmFraudScorer` run against it instead of the
+built-in regex extractor and heuristic scorer.
+
+**The rules stay authoritative either way.** This is deliberately additive,
+not a replacement: `LlmFraudScorer` falls back to the deterministic
+`scoreFraudRisk` heuristic on a malformed reply or a failed model call
+(see "Claims-AI" above), and rating, the VAHAN vehicle cross-check, and every
+other rule in the platform run exactly as they do without a model configured.
+No model output is ever trusted without a check against the source claim
+data — the model narrows or explains, it never overrides.
+
+OpenCover ships no model weights or runtime binaries of its own; bring your
+own local server and point these variables at it.
+
 ### Vehicle & document verification (VAHAN / DigiLocker)
 
 Two more Connector SDK ports follow the same "swappable provider, no hosted

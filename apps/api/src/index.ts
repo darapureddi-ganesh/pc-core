@@ -14,6 +14,11 @@ buildDemoRegistry()
     if (process.env.DATABASE_URL) {
       console.log(`  demo tenant is Postgres-backed (DATABASE_URL set)`);
     }
+    if (process.env.LOCAL_LLM_MODEL) {
+      console.log(
+        `  demo tenant's fraud scoring + IDP extraction run against local model "${process.env.LOCAL_LLM_MODEL}" (LOCAL_LLM_MODEL set)`,
+      );
+    }
   })
   .catch((err) => {
     console.error(err);

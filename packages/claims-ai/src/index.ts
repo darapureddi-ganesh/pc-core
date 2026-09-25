@@ -19,6 +19,9 @@ export type {
 export { OllamaLlmClient } from "./ollama.js";
 export type { OllamaClientOptions } from "./ollama.js";
 
+export { OpenAiCompatibleLlmClient } from "./openai-compatible.js";
+export type { OpenAiCompatibleClientOptions } from "./openai-compatible.js";
+
 export { checkVehicleDetails } from "./vehicle-verification.js";
 export type {
   DeclaredVehicleDetails,
