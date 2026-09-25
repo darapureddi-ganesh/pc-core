@@ -50,4 +50,28 @@ describe("validateMappedPolicy", () => {
     const result = validateMappedPolicy({ policyId: "", status: "BAD" });
     expect(result.errors.length).toBeGreaterThan(1);
   });
+
+  it("rejects an array in place of base — typeof [] is \"object\" too", () => {
+    const result = validateMappedPolicy({ ...validPolicy, base: [] });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("base"))).toBe(true);
+  });
+
+  it("rejects an array in place of a transaction's change", () => {
+    const result = validateMappedPolicy({
+      ...validPolicy,
+      transactions: [{ ...validPolicy.transactions[0], change: [] }],
+    });
+    expect(result.valid).toBe(false);
+    expect(result.errors.some((e) => e.includes("change"))).toBe(true);
+  });
+
+  it("returns invalid (never throws) for null/undefined transaction items", () => {
+    expect(() =>
+      validateMappedPolicy({ ...validPolicy, transactions: [null, undefined] }),
+    ).not.toThrow();
+    const result = validateMappedPolicy({ ...validPolicy, transactions: [null, undefined] });
+    expect(result.valid).toBe(false);
+    expect(result.errors.length).toBeGreaterThanOrEqual(2);
+  });
 });

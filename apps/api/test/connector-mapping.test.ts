@@ -201,4 +201,35 @@ describe("connector onboarding with an inferred field mapping", () => {
     expect(res.statusCode).toBe(422);
     await app.close();
   });
+
+  it("rejects a non-local ollamaBaseUrl on propose-mapping (SSRF/exfiltration guard)", async () => {
+    const app = newApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/connectors/propose-mapping",
+      payload: {
+        sampleRecords: [sampleGammaRecord],
+        ollamaModel: "llama3.1",
+        ollamaBaseUrl: "http://evil.example.com:11434",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
+
+  it("rejects a non-local ollamaBaseUrl on register (SSRF/exfiltration guard)", async () => {
+    const app = newApp();
+    const res = await app.inject({
+      method: "POST",
+      url: "/connectors/register",
+      payload: {
+        name: "Sketchy Co",
+        policyBaseUrl: externalBaseUrl,
+        ollamaModel: "llama3.1",
+        ollamaBaseUrl: "http://169.254.169.254/latest/meta-data",
+      },
+    });
+    expect(res.statusCode).toBe(400);
+    await app.close();
+  });
 });

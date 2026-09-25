@@ -101,6 +101,28 @@ describe("applyPolicyEnvelopeMapping — reproduces the hand-written Beta adapte
     ).toThrow(/JSON-encoded/);
   });
 
+  it("rejects an inherited-property status value like \"toString\"", () => {
+    // { state: "toString" } — plain `in` would match Object.prototype.toString
+    // even though it's not a real entry in statusValues.
+    expect(() =>
+      applyPolicyEnvelopeMapping({ ...betaRecord, state: "toString" }, betaMapping),
+    ).toThrow(/status value/);
+  });
+
+  it("round-trips a customerId when the mapping declares it", () => {
+    const mappingWithCustomerId = {
+      ...betaMapping,
+      fields: { ...betaMapping.fields, customerId: "custId" },
+    };
+    const policy = applyPolicyEnvelopeMapping(
+      { ...betaRecord, custId: "cust-42" },
+      mappingWithCustomerId,
+    );
+    expect(policy.customerId).toBe("cust-42");
+    const roundTripped = unapplyPolicyEnvelopeMapping(policy, mappingWithCustomerId);
+    expect((roundTripped as Record<string, unknown>).custId).toBe("cust-42");
+  });
+
   it("round-trips through unapply back to the original shape", () => {
     const policy = applyPolicyEnvelopeMapping(betaRecord, betaMapping);
     const roundTripped = unapplyPolicyEnvelopeMapping(policy, betaMapping);

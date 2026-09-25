@@ -32,7 +32,13 @@ export function applyPolicyEnvelopeMapping(
   const f = mapping.fields;
 
   const rawStatus = getPath(source, f.status);
-  if (typeof rawStatus !== "string" || !(rawStatus in mapping.statusValues)) {
+  // hasOwnProperty, not `in` or a plain index — `in` also matches inherited
+  // properties, so a status value of "toString" or "constructor" would
+  // otherwise pass and later get cast to PolicyStatus.
+  if (
+    typeof rawStatus !== "string" ||
+    !Object.prototype.hasOwnProperty.call(mapping.statusValues, rawStatus)
+  ) {
     throw new Error(
       `status value ${JSON.stringify(rawStatus)} (from "${f.status}") has no entry in statusValues`,
     );
@@ -63,6 +69,10 @@ export function applyPolicyEnvelopeMapping(
   const cancelledEffectiveFrom = f.cancelledEffectiveFrom
     ? getPath(source, f.cancelledEffectiveFrom)
     : undefined;
+  // customerId ties a policy to a Customer identity across renewals/claims
+  // (see PolicyService.quote / CustomerService.history) — without an
+  // explicit mapping entry a mapped connector would silently drop it.
+  const customerId = f.customerId ? getPath(source, f.customerId) : undefined;
 
   const policy: PolicyAggregate = {
     policyId: getPath(source, f.policyId) as string,
@@ -79,6 +89,7 @@ export function applyPolicyEnvelopeMapping(
     transactions,
     ...(typeof insuredName === "string" && { insured: { name: insuredName } }),
     ...(typeof cancelledEffectiveFrom === "string" && { cancelledEffectiveFrom }),
+    ...(typeof customerId === "string" && { customerId }),
   };
   return policy;
 }
@@ -131,6 +142,9 @@ export function unapplyPolicyEnvelopeMapping(
   }
   if (f.cancelledEffectiveFrom && policy.cancelledEffectiveFrom) {
     setPath(out, f.cancelledEffectiveFrom, policy.cancelledEffectiveFrom);
+  }
+  if (f.customerId && policy.customerId) {
+    setPath(out, f.customerId, policy.customerId);
   }
   return out;
 }

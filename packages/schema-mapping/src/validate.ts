@@ -39,8 +39,10 @@ export function validateMappedPolicy(candidate: unknown): MappingValidationResul
   if (!term || typeof term.from !== "string" || typeof term.to !== "string") {
     errors.push("term.from and term.to must both be strings");
   }
-  if (c.base === null || typeof c.base !== "object") {
-    errors.push("base must be an object (was it supposed to be marked JSON-encoded?)");
+  // `typeof [] === "object"` too — an array isn't a valid MotorRisk/RiskChange
+  // object, so it must be rejected explicitly, not just null-checked.
+  if (c.base === null || typeof c.base !== "object" || Array.isArray(c.base)) {
+    errors.push("base must be an object, not an array (was it supposed to be marked JSON-encoded?)");
   }
   if (typeof c.baseRecordedAt !== "string") {
     errors.push("baseRecordedAt must be a string");
@@ -49,6 +51,10 @@ export function validateMappedPolicy(candidate: unknown): MappingValidationResul
     errors.push("transactions must be an array");
   } else {
     c.transactions.forEach((t, i) => {
+      if (t === null || typeof t !== "object" || Array.isArray(t)) {
+        errors.push(`transactions[${i}] must be an object`);
+        return;
+      }
       const item = t as Record<string, unknown>;
       if (item.txnType !== "ENDORSE") {
         errors.push(`transactions[${i}].txnType must be "ENDORSE"`);
@@ -56,8 +62,8 @@ export function validateMappedPolicy(candidate: unknown): MappingValidationResul
       if (typeof item.effectiveFrom !== "string" || typeof item.recordedAt !== "string") {
         errors.push(`transactions[${i}].effectiveFrom/recordedAt must be strings`);
       }
-      if (item.change === null || typeof item.change !== "object") {
-        errors.push(`transactions[${i}].change must be an object (JSON-encoded?)`);
+      if (item.change === null || typeof item.change !== "object" || Array.isArray(item.change)) {
+        errors.push(`transactions[${i}].change must be an object, not an array (JSON-encoded?)`);
       }
     });
   }

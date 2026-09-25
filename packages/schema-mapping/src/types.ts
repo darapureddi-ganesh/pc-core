@@ -29,6 +29,8 @@ export interface PolicyEnvelopeMapping {
     transactions: string;
     insuredName?: string;
     cancelledEffectiveFrom?: string;
+    /** links the mapped policy to a Customer identity (see PolicyAggregate.customerId) */
+    customerId?: string;
   };
   /** source status value (as it literally appears in the record) -> PC Core's PolicyStatus */
   statusValues: Record<string, "QUOTED" | "BOUND" | "ISSUED" | "CANCELLED">;

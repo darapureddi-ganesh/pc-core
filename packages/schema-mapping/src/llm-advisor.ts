@@ -13,6 +13,8 @@ const REQUIRED_FIELD_KEYS = [
   "transactions",
 ] as const;
 
+const OPTIONAL_FIELD_KEYS = ["insuredName", "cancelledEffectiveFrom", "customerId"] as const;
+
 const VALID_STATUSES = new Set(["QUOTED", "BOUND", "ISSUED", "CANCELLED"]);
 
 /**
@@ -42,14 +44,15 @@ export class LlmPolicyMappingAdvisor {
       "Target envelope fields (dot-paths into the SOURCE record, as strings):",
       "  policyId, policyNumber, productCode, productVersion, status,",
       "  termFrom, termTo, base, baseRecordedAt, transactions,",
-      "  insuredName (optional), cancelledEffectiveFrom (optional)",
+      "  insuredName (optional), cancelledEffectiveFrom (optional), customerId (optional)",
       "",
       "Return ONLY strict JSON of the form:",
       "{",
       '  "fields": { "policyId": string, "policyNumber": string, "productCode": string,',
       '              "productVersion": string, "status": string, "termFrom": string,',
       '              "termTo": string, "base": string, "baseRecordedAt": string,',
-      '              "transactions": string, "insuredName"?: string, "cancelledEffectiveFrom"?: string },',
+      '              "transactions": string, "insuredName"?: string,',
+      '              "cancelledEffectiveFrom"?: string, "customerId"?: string },',
       '  "statusValues": { "<source status value>": "QUOTED"|"BOUND"|"ISSUED"|"CANCELLED", ... },',
       '  "baseIsJsonEncoded": boolean,',
       '  "transactionFields": { "txnType": string, "effectiveFrom": string, "recordedAt": string, "change": string },',
@@ -80,6 +83,12 @@ function parseMapping(reply: string): PolicyEnvelopeMapping | null {
 
   const fields = json.fields as Record<string, unknown> | undefined;
   if (!fields || REQUIRED_FIELD_KEYS.some((k) => typeof fields[k] !== "string")) {
+    return null;
+  }
+  // Optional fields must still be strings WHEN PRESENT — a reply that sets
+  // insuredName: 42 must degrade to null like any other malformed reply,
+  // not get accepted and later crash a real getPath call.
+  if (OPTIONAL_FIELD_KEYS.some((k) => k in fields && typeof fields[k] !== "string")) {
     return null;
   }
 

@@ -87,6 +87,7 @@ const policyFieldMappingSchema = z.object({
     transactions: z.string(),
     insuredName: z.string().optional(),
     cancelledEffectiveFrom: z.string().optional(),
+    customerId: z.string().optional(),
   }),
   statusValues: z.record(z.enum(["QUOTED", "BOUND", "ISSUED", "CANCELLED"])),
   baseIsJsonEncoded: z.boolean().optional(),
@@ -123,6 +124,33 @@ const proposeMappingSchema = z.object({
 });
 
 const DEFAULT_TENANT = "demo";
+
+const LOCAL_MODEL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * `ollamaBaseUrl` is caller-controlled on both /connectors/register and
+ * /connectors/propose-mapping. Without this check, an unauthenticated caller
+ * could point the server at an arbitrary URL — including internal-network
+ * services — and have it POST sample records / claim data there (SSRF and
+ * data exfiltration). The whole feature this URL exists for is "point at
+ * YOUR OWN local model server", so restricting it to loopback hosts costs
+ * nothing real while closing that off.
+ */
+function assertLocalModelUrl(url: string | undefined): void {
+  if (!url) return;
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    throw new ServiceError(`ollamaBaseUrl is not a valid URL`, "BAD_REQUEST");
+  }
+  if (!LOCAL_MODEL_HOSTS.has(hostname)) {
+    throw new ServiceError(
+      `ollamaBaseUrl must point at a local model server (127.0.0.1/localhost), got "${hostname}"`,
+      "BAD_REQUEST",
+    );
+  }
+}
 
 const httpStatus = (code: ServiceErrorCode): number =>
   code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
@@ -178,6 +206,7 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   app.post("/connectors/register", async (req, reply) => {
     const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl, policyFieldMapping } =
       registerConnectorSchema.parse(req.body);
+    assertLocalModelUrl(ollamaBaseUrl);
     const tenant = registry.registerConnector(
       name,
       policyBaseUrl,
@@ -197,6 +226,7 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
     const { sampleRecords, ollamaModel, ollamaBaseUrl } = proposeMappingSchema.parse(
       req.body,
     );
+    assertLocalModelUrl(ollamaBaseUrl);
     const advisor = new LlmPolicyMappingAdvisor(
       new OllamaLlmClient({ model: ollamaModel, baseUrl: ollamaBaseUrl }),
     );

@@ -68,6 +68,21 @@ describe("LlmPolicyMappingAdvisor", () => {
     expect(await advisor.proposeMapping(sampleRecords)).toBeNull();
   });
 
+  it("rejects a reply where an optional field is present but not a string", () => {
+    return Promise.all(
+      [
+        { insuredName: 42 },
+        { cancelledEffectiveFrom: {} },
+        { customerId: false },
+      ].map(async (badOptional) => {
+        const bad = JSON.parse(validMappingJson);
+        bad.fields = { ...bad.fields, ...badOptional };
+        const advisor = new LlmPolicyMappingAdvisor(stubLlm(JSON.stringify(bad)));
+        expect(await advisor.proposeMapping(sampleRecords)).toBeNull();
+      }),
+    );
+  });
+
   it("degrades to null on a malformed reply", async () => {
     const advisor = new LlmPolicyMappingAdvisor(stubLlm("sorry, I can't do that"));
     expect(await advisor.proposeMapping(sampleRecords)).toBeNull();
