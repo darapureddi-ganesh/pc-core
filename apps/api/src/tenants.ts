@@ -6,6 +6,7 @@ import {
   InMemoryCustomerRepository,
   InMemoryHandlersRepository,
   InMemoryPolicyRepository,
+  MappedRemoteHttpPolicyRepository,
   MockVehicleRegistry,
   PostgresAssignmentLogRepository,
   PostgresBillingRepository,
@@ -26,6 +27,7 @@ import {
   type OpenAiCompatibleClientOptions,
   type TriageAdvisor,
 } from "@pc-core/claims-ai";
+import type { PolicyEnvelopeMapping } from "@pc-core/schema-mapping";
 import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
 import { PolicyService } from "./service/policy-service.js";
@@ -193,11 +195,19 @@ export class TenantRegistry {
    * scorer — PC Core ships no hosted model of its own, so this is how a
    * company brings their own. The triage hint stays advisory only; it never
    * changes the deterministic priority/claimType ClaimQueueService sets.
+   *
+   * Optionally also takes a human-confirmed PolicyEnvelopeMapping (see
+   * @pc-core/schema-mapping and POST /connectors/propose-mapping) for a
+   * company whose policy service returns records in its own shape rather
+   * than PolicyAggregate directly — MappedRemoteHttpPolicyRepository applies
+   * it on every real call instead of the company writing translation code
+   * by hand. No mapping reaches here without a person having reviewed it.
    */
   registerConnector(
     name: string,
     policyBaseUrl: string,
     ollama?: OllamaClientOptions,
+    policyFieldMapping?: PolicyEnvelopeMapping,
   ): TenantInfo & { apiKey: string } {
     const info: TenantInfo = { tenantId: newTenantId(name), name };
     const apiKey = newApiKey();
@@ -210,9 +220,12 @@ export class TenantRegistry {
     const triageAdvisor = ollama
       ? new LlmTriageAdvisor(new OllamaLlmClient(ollama))
       : undefined;
+    const policyRepo = policyFieldMapping
+      ? new MappedRemoteHttpPolicyRepository(policyBaseUrl, policyFieldMapping)
+      : new RemoteHttpPolicyRepository(policyBaseUrl);
     this.register(
       info,
-      { policy: new RemoteHttpPolicyRepository(policyBaseUrl) },
+      { policy: policyRepo },
       apiKey,
       claimsAi,
       undefined,

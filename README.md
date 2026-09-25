@@ -39,6 +39,8 @@ apps/
 packages/
   ports/          the Connector SDK: storage contracts a company implements
   adapters/       reference adapters: in-memory + RemoteHttpPolicyRepository
+  schema-mapping/ infers + applies a field mapping for a connector whose own
+                  shape differs from PolicyAggregate  (pure, tested)
   domain/         effective-dated / bitemporal timeline  (pure, tested)
   config-engine/  product loader + rating interpreter + rules  (pure, tested)
   billing/        double-entry ledger + installment schedule  (pure, tested)
@@ -329,6 +331,52 @@ curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
 
 Run the platform demo (API + a stand-in external insurer, printing both demo
 API keys on boot) with `pnpm platform`.
+
+### Onboarding without hand-written translation code (schema mapping)
+
+Gamma's example above assumes their REST service already speaks
+`PolicyAggregate` directly. Most real policy-admin systems don't — they have
+their own field names, their own status codes, their risk data as an opaque
+blob. Today, `apps/mock-insurer/src/store.ts`'s `toContract`/`toBeta`
+functions show what bridging that by hand looks like. `@pc-core/schema-mapping`
+exists so a company doesn't have to write that code.
+
+The mapping isn't inferred fresh on every request — that would mean running a
+model on every single policy read, slow and unreliable on modest hardware.
+Instead, a **local model proposes the mapping once**, from a few real sample
+records, and from then on a **plain deterministic function applies it** —
+no model in the hot path at all:
+
+```bash
+curl -sX POST localhost:3000/connectors/propose-mapping -H 'content-type: application/json' \
+  -d '{"sampleRecords":[{"id":"p1","number":"G-001","productCd":"PRIVATE_CAR", ...}], "ollamaModel":"llama3.1"}'
+# -> { "mapping": { "fields": {...}, "statusValues": {...}, ... }, "dryRun": { "valid": true, "samples": [...] } }
+```
+
+`dryRun` re-applies the proposed mapping to every sample and structurally
+validates the result (`@pc-core/schema-mapping`'s `dryRunMapping` +
+`validateMappedPolicy`) — a wrong field name, an unmapped status value, or a
+JSON-encoded field the model missed all fail loudly right here, before
+anyone trusts the mapping. **A person is meant to review `dryRun` and the
+proposed mapping before using it** — it's a proposal, never applied
+automatically just because it validates on 2-3 samples. Once confirmed, pass
+it to `/connectors/register` as `policyFieldMapping`:
+
+```bash
+curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
+  -d '{"name":"Gamma Insurance","policyBaseUrl":"https://gamma.example.com","policyFieldMapping":{...}}'
+```
+
+From then on, `MappedRemoteHttpPolicyRepository` applies that mapping on
+every real call — Gamma's own JSON shape in, `PolicyAggregate` out, and back
+again on writes — with no LLM involved at runtime. The mapping engine itself
+(`applyPolicyEnvelopeMapping`/`unapplyPolicyEnvelopeMapping`) is deliberately
+not a general transform language — no arbitrary expressions, no code
+execution — just field renames, a status enum table, and JSON-encoded-field
+handling. That covers a real, representative case (it can reproduce Beta's
+exact hand-written mapping above) but not everything; a sufficiently unusual
+schema still needs a hand-written adapter, same as before this package
+existed.
 
 ## Claims-AI (from the technology matrix)
 
