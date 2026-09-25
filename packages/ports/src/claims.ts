@@ -29,6 +29,17 @@ export interface Claim {
   slaBreached?: boolean;
   /** which rule (if any) overrode the classification baseline — audit trail */
   classificationRuleApplied?: string | null;
+  /** advisory only — a local model's suggested priority/type + rationale, for
+   * a reviewer to compare against the deterministic classification above.
+   * Never applied automatically; absent when no TriageAdvisor is configured
+   * or it had no opinion (see ClaimQueueService.classify). */
+  aiTriageHint?: {
+    suggestedPriority: Priority;
+    suggestedClaimType: ClaimType;
+    rationale: string;
+    /** whether the model's suggestion matches the rules pipeline's own priority + claimType */
+    agreesWithRules: boolean;
+  };
 
   // ── assignment (set by ClaimQueueService.assign / .override) ──
   assignedHandlerId?: string;

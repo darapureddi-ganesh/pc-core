@@ -78,6 +78,13 @@ export interface Claim {
   slaRiskScore?: number;
   slaBreached?: boolean;
   classificationRuleApplied?: string | null;
+  /** advisory only — a local model's opinion, never applied automatically */
+  aiTriageHint?: {
+    suggestedPriority: string;
+    suggestedClaimType: string;
+    rationale: string;
+    agreesWithRules: boolean;
+  };
   assignedHandlerId?: string;
 }
 

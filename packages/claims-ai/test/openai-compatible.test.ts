@@ -71,4 +71,20 @@ describe("OpenAiCompatibleLlmClient", () => {
     const client = new OpenAiCompatibleLlmClient({ model: "qwen2.5-3b-instruct" });
     await expect(client.complete("hi")).rejects.toThrow(/no message content/);
   });
+
+  it("aborts the request if the server doesn't respond within timeoutMs", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const signal = init.signal as AbortSignal;
+      return new Promise<Response>((_resolve, reject) => {
+        signal.addEventListener("abort", () => reject(new Error("aborted")));
+      });
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const client = new OpenAiCompatibleLlmClient({
+      model: "qwen2.5-3b-instruct",
+      timeoutMs: 10,
+    });
+    await expect(client.complete("hi")).rejects.toThrow();
+  });
 });

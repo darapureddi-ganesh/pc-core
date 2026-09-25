@@ -5,6 +5,12 @@ export interface OllamaClientOptions {
   model: string;
   /** default: a local Ollama server's default port */
   baseUrl?: string;
+  /** abort the request if the server hasn't responded within this many ms
+   * (default 15000). Every caller of LlmClient (fraud scoring, IDP
+   * extraction, claim-queue triage) treats a failed call as "no opinion" and
+   * degrades safely — but only if the call actually fails instead of hanging
+   * forever, which an unresponsive local model server otherwise would. */
+  timeoutMs?: number;
 }
 
 /**
@@ -17,10 +23,12 @@ export interface OllamaClientOptions {
 export class OllamaLlmClient implements LlmClient {
   private readonly baseUrl: string;
   private readonly model: string;
+  private readonly timeoutMs: number;
 
   constructor(options: OllamaClientOptions) {
     this.model = options.model;
     this.baseUrl = (options.baseUrl ?? "http://127.0.0.1:11434").replace(/\/$/, "");
+    this.timeoutMs = options.timeoutMs ?? 15_000;
   }
 
   async complete(prompt: string): Promise<string> {
@@ -28,6 +36,7 @@ export class OllamaLlmClient implements LlmClient {
       method: "POST",
       headers: { "content-type": "application/json" },
       body: JSON.stringify({ model: this.model, prompt, stream: false }),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok) {
       throw new Error(`Ollama request failed: ${res.status} ${res.statusText}`);

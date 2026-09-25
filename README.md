@@ -393,7 +393,8 @@ runtimes implement — llama.cpp's `llama-server`, LM Studio, vLLM,
 text-generation-webui, and Ollama's own `/v1/chat/completions` endpoint all
 work against it unmodified. When `LOCAL_LLM_MODEL` is set, the demo tenant's
 `LlmDocumentExtractor` and `LlmFraudScorer` run against it instead of the
-built-in regex extractor and heuristic scorer.
+built-in regex extractor and heuristic scorer, and the claim queue's
+classification step (below) gets an advisory `LlmTriageAdvisor` too.
 
 **The rules stay authoritative either way.** This is deliberately additive,
 not a replacement: `LlmFraudScorer` falls back to the deterministic
@@ -402,6 +403,24 @@ not a replacement: `LlmFraudScorer` falls back to the deterministic
 other rule in the platform run exactly as they do without a model configured.
 No model output is ever trusted without a check against the source claim
 data — the model narrows or explains, it never overrides.
+
+#### Claim-queue triage: an advisory hint, never a decision
+
+`ClaimQueueService.classify()` always runs the deterministic rules pipeline
+first (`classifyClaim` — see "the claim queue" below) and that result is
+final: `claim.priority`, `claim.claimType`, `claim.complexity`, and the SLA
+deadline are exactly what the rules say, model or no model.
+
+When a `TriageAdvisor` is configured (via `LOCAL_LLM_MODEL`, or `ollamaModel`
+on a self-serve connector), its suggestion is attached separately as
+`claim.aiTriageHint` — `{ suggestedPriority, suggestedClaimType, rationale,
+agreesWithRules }` — purely for a reviewer to see where the model and the
+rules disagree. `agreesWithRules` is computed by the service, not the model.
+`LlmTriageAdvisor` also refuses to report a value outside the same enum the
+rules pipeline uses (a model can suggest `"HIGH"`, never invent a priority
+level that doesn't exist), and degrades to no opinion at all — not a guess —
+on a malformed reply or a failed model call. The portal's Claims panel shows
+the hint next to the rules' own classification when one is present.
 
 OpenCover ships no model weights or runtime binaries of its own; bring your
 own local server and point these variables at it.

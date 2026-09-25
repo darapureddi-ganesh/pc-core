@@ -7,6 +7,11 @@ export interface OpenAiCompatibleClientOptions {
   baseUrl?: string;
   /** most local servers ignore this, but the field is part of the standard request shape */
   apiKey?: string;
+  /** abort the request if the server hasn't responded within this many ms
+   * (default 15000) — keeps an unresponsive local model from blocking a
+   * caller (fraud scoring, IDP extraction, claim-queue triage) indefinitely;
+   * every LlmClient caller already treats a failed call as "no opinion". */
+  timeoutMs?: number;
 }
 
 /**
@@ -25,11 +30,13 @@ export class OpenAiCompatibleLlmClient implements LlmClient {
   private readonly baseUrl: string;
   private readonly model: string;
   private readonly apiKey?: string;
+  private readonly timeoutMs: number;
 
   constructor(options: OpenAiCompatibleClientOptions) {
     this.model = options.model;
     this.baseUrl = (options.baseUrl ?? "http://127.0.0.1:8080").replace(/\/$/, "");
     this.apiKey = options.apiKey;
+    this.timeoutMs = options.timeoutMs ?? 15_000;
   }
 
   async complete(prompt: string): Promise<string> {
@@ -44,6 +51,7 @@ export class OpenAiCompatibleLlmClient implements LlmClient {
         messages: [{ role: "user", content: prompt }],
         stream: false,
       }),
+      signal: AbortSignal.timeout(this.timeoutMs),
     });
     if (!res.ok) {
       throw new Error(

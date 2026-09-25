@@ -98,4 +98,62 @@ describe("buildDemoRegistry — local model wiring (LOCAL_LLM_* / explicit overr
     expect(claim.fraudScore).toBe(0);
     expect(claim.fraudSignals).toEqual([]);
   });
+
+  it("attaches an aiTriageHint on the demo tenant's claim queue when a local model is configured", async () => {
+    const fetchMock = vi.fn(async (_url: string, init: RequestInit) => {
+      const body = JSON.parse(init.body as string) as { messages: { content: string }[] };
+      const promptText = body.messages[0]?.content ?? "";
+      const content = promptText.toLowerCase().includes("suggest a priority")
+        ? '{"suggestedPriority":"HIGH","suggestedClaimType":"MOTOR_ACCIDENT","rationale":"looks urgent"}'
+        : '{"score":0,"signals":[]}'; // fraud scoring, uninteresting here
+      return new Response(
+        JSON.stringify({ choices: [{ message: { content } }] }),
+        { status: 200 },
+      );
+    });
+    vi.stubGlobal("fetch", fetchMock);
+
+    const registry = await buildDemoRegistry(undefined, undefined, {
+      model: "test-model",
+      baseUrl: "http://localhost:9999",
+    });
+    const demo = registry.resolve("demo");
+    if (!demo) throw new Error("demo tenant not registered");
+
+    const { policyId } = await demo.policy.quote(quotePayload); // sum insured 600k -> rules say CRITICAL
+    await demo.policy.bind(policyId);
+    await demo.policy.issue(policyId);
+    const claim = await demo.claims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+    });
+
+    const { claim: classified } = await demo.claimQueue.classify({ claimId: claim.claimId });
+
+    expect(classified.priority).toBe("CRITICAL"); // the rules pipeline's own decision, unchanged
+    expect(classified.aiTriageHint).toEqual({
+      suggestedPriority: "HIGH",
+      suggestedClaimType: "MOTOR_ACCIDENT",
+      rationale: "looks urgent",
+      agreesWithRules: false, // HIGH != CRITICAL
+    });
+  });
+
+  it("leaves aiTriageHint unset on the demo tenant's claim queue when no local model is configured", async () => {
+    const registry = await buildDemoRegistry(undefined, undefined, undefined);
+    const demo = registry.resolve("demo")!;
+
+    const { policyId } = await demo.policy.quote(quotePayload);
+    await demo.policy.bind(policyId);
+    await demo.policy.issue(policyId);
+    const claim = await demo.claims.fnol({
+      policyId,
+      incidentDate: "2026-06-01",
+      cause: "collision",
+    });
+
+    const { claim: classified } = await demo.claimQueue.classify({ claimId: claim.claimId });
+    expect(classified.aiTriageHint).toBeUndefined();
+  });
 });

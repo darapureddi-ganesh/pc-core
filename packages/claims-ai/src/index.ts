@@ -9,11 +9,15 @@ export {
   HeuristicFraudScorer,
   LlmDocumentExtractor,
   LlmFraudScorer,
+  LlmTriageAdvisor,
 } from "./providers.js";
 export type {
   DocumentExtractor,
   FraudScorer,
   LlmClient,
+  TriageAdvisor,
+  TriageAdvisorInput,
+  TriageAdvisorResult,
 } from "./providers.js";
 
 export { OllamaLlmClient } from "./ollama.js";

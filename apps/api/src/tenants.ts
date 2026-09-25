@@ -19,10 +19,12 @@ import { createDb, type Db } from "@pc-core/db/client";
 import {
   LlmDocumentExtractor,
   LlmFraudScorer,
+  LlmTriageAdvisor,
   OllamaLlmClient,
   OpenAiCompatibleLlmClient,
   type OllamaClientOptions,
   type OpenAiCompatibleClientOptions,
+  type TriageAdvisor,
 } from "@pc-core/claims-ai";
 import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
@@ -89,6 +91,7 @@ function buildServices(
   connector: Connector,
   claimsAi?: ClaimsAiProviders,
   seedHandlers: Handler[] = [],
+  triageAdvisor?: TriageAdvisor,
 ): TenantServices {
   const policy = new PolicyService(connector.policy);
   const billing = new BillingService(
@@ -100,6 +103,8 @@ function buildServices(
     claimsRepo,
     connector.handlers ?? new InMemoryHandlersRepository(seedHandlers),
     connector.assignmentLog ?? new InMemoryAssignmentLogRepository(),
+    undefined, // company rules: use ClaimQueueService's own DEFAULT_COMPANY_RULES
+    triageAdvisor,
   );
   const customers = new CustomerService(
     connector.customers ?? new InMemoryCustomerRepository(),
@@ -165,11 +170,12 @@ export class TenantRegistry {
     apiKey: string,
     claimsAi?: ClaimsAiProviders,
     seedHandlers?: Handler[],
+    triageAdvisor?: TriageAdvisor,
   ): void {
     const entry: RegisteredTenant = {
       info,
       apiKey,
-      services: buildServices(info, connector, claimsAi, seedHandlers),
+      services: buildServices(info, connector, claimsAi, seedHandlers, triageAdvisor),
     };
     this.byTenantId.set(info.tenantId, entry);
     this.byApiKey.set(apiKey, entry);
@@ -180,11 +186,13 @@ export class TenantRegistry {
    * the policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository)
    * and gets back a tenant ID + API key. No code changes on OpenCover's side.
    *
-   * Optionally also points claims-AI's IDP extraction AND fraud scoring at a
-   * self-hosted Ollama model for this tenant (see @pc-core/claims-ai's
-   * OllamaLlmClient / LlmFraudScorer) instead of the default regex extractor
-   * and heuristic scorer — OpenCover ships no hosted model of its own, so
-   * this is how a company brings their own.
+   * Optionally also points claims-AI's IDP extraction AND fraud scoring, plus
+   * the claim queue's advisory triage hint, at a self-hosted Ollama model for
+   * this tenant (see @pc-core/claims-ai's OllamaLlmClient / LlmFraudScorer /
+   * LlmTriageAdvisor) instead of the default regex extractor and heuristic
+   * scorer — OpenCover ships no hosted model of its own, so this is how a
+   * company brings their own. The triage hint stays advisory only; it never
+   * changes the deterministic priority/claimType ClaimQueueService sets.
    */
   registerConnector(
     name: string,
@@ -199,11 +207,16 @@ export class TenantRegistry {
           fraudScorer: new LlmFraudScorer(new OllamaLlmClient(ollama)),
         }
       : undefined;
+    const triageAdvisor = ollama
+      ? new LlmTriageAdvisor(new OllamaLlmClient(ollama))
+      : undefined;
     this.register(
       info,
       { policy: new RemoteHttpPolicyRepository(policyBaseUrl) },
       apiKey,
       claimsAi,
+      undefined,
+      triageAdvisor,
     );
     return { ...info, apiKey };
   }
@@ -274,6 +287,12 @@ export async function buildDemoRegistry(
       fraudScorer: new LlmFraudScorer(new OpenAiCompatibleLlmClient(localLlm)),
     }),
   };
+  // Same local model, if configured, also offers an advisory triage hint in
+  // the claim queue — see TriageAdvisor's contract: it never overrides the
+  // deterministic priority/claimType classifyClaim() sets.
+  const demoTriageAdvisor = localLlm
+    ? new LlmTriageAdvisor(new OpenAiCompatibleLlmClient(localLlm))
+    : undefined;
 
   if (databaseUrl) {
     const { db } = createDb(databaseUrl);
@@ -283,6 +302,8 @@ export async function buildDemoRegistry(
       buildPostgresConnector(db),
       DEMO_API_KEY,
       demoClaimsAi,
+      undefined,
+      demoTriageAdvisor,
     );
   } else {
     registry.register(
@@ -291,6 +312,7 @@ export async function buildDemoRegistry(
       DEMO_API_KEY,
       demoClaimsAi,
       DEMO_HANDLERS,
+      demoTriageAdvisor,
     );
   }
 

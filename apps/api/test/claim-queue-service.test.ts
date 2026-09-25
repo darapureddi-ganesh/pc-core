@@ -6,6 +6,7 @@ import {
   InMemoryPolicyRepository,
 } from "@pc-core/adapters";
 import type { ClaimsRepository, Handler, MotorRisk } from "@pc-core/ports";
+import type { TriageAdvisor, TriageAdvisorResult } from "@pc-core/claims-ai";
 import { PolicyService, type QuoteCommand } from "../src/service/policy-service.js";
 import { ClaimsService } from "../src/service/claims-service.js";
 import { ClaimQueueService } from "../src/service/claim-queue-service.js";
@@ -166,6 +167,123 @@ describe("ClaimQueueService — assignment", () => {
     const secondOverride = entries.filter((e) => e.isOverride)[1];
     expect(secondOverride?.recommendedHandlerId).toBe("h-accident");
     expect(secondOverride?.finalHandlerId).toBe("h-generalist");
+  });
+});
+
+describe("ClaimQueueService — advisory AI triage hint", () => {
+  const stubAdvisor = (result: TriageAdvisorResult | null): TriageAdvisor => ({
+    advise: async () => result,
+  });
+
+  it("attaches an aiTriageHint without changing the deterministic priority/claimType", async () => {
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      stubAdvisor({
+        suggestedPriority: "LOW",
+        suggestedClaimType: "MOTOR_OTHER",
+        rationale: "looks minor",
+      }),
+    );
+    const claimId = await issuedClaim("collision on highway"); // rules say CRITICAL/MOTOR_ACCIDENT
+    const { claim } = await advised.classify({ claimId });
+
+    // The rules pipeline's decision is untouched by the model disagreeing.
+    expect(claim.priority).toBe("CRITICAL");
+    expect(claim.claimType).toBe("MOTOR_ACCIDENT");
+    expect(claim.aiTriageHint).toEqual({
+      suggestedPriority: "LOW",
+      suggestedClaimType: "MOTOR_OTHER",
+      rationale: "looks minor",
+      agreesWithRules: false,
+    });
+  });
+
+  it("marks agreesWithRules true when the model's suggestion matches", async () => {
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      stubAdvisor({
+        suggestedPriority: "CRITICAL",
+        suggestedClaimType: "MOTOR_ACCIDENT",
+        rationale: "high value collision",
+      }),
+    );
+    const claimId = await issuedClaim("collision on highway");
+    const { claim } = await advised.classify({ claimId });
+    expect(claim.aiTriageHint?.agreesWithRules).toBe(true);
+  });
+
+  it("leaves aiTriageHint unset when the advisor has no opinion", async () => {
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      stubAdvisor(null),
+    );
+    const claimId = await issuedClaim("collision on highway");
+    const { claim } = await advised.classify({ claimId });
+    expect(claim.aiTriageHint).toBeUndefined();
+  });
+
+  it("leaves aiTriageHint unset when no advisor is configured at all", async () => {
+    const claimId = await issuedClaim("collision on highway");
+    const { claim } = await queue.classify({ claimId }); // default beforeEach queue, no advisor
+    expect(claim.aiTriageHint).toBeUndefined();
+  });
+
+  it("clears a stale hint on reclassification if the advisor now has no opinion", async () => {
+    let opinion: TriageAdvisorResult | null = {
+      suggestedPriority: "LOW",
+      suggestedClaimType: "MOTOR_OTHER",
+      rationale: "first pass",
+    };
+    const flakyAdvisor: TriageAdvisor = { advise: async () => opinion };
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      flakyAdvisor,
+    );
+    const claimId = await issuedClaim("collision on highway");
+
+    const first = await advised.classify({ claimId });
+    expect(first.claim.aiTriageHint).toBeDefined();
+
+    // The advisor now has no opinion (e.g. the model server went down) —
+    // reclassifying must not leave the previous run's hint sitting there.
+    opinion = null;
+    const second = await advised.classify({ claimId });
+    expect(second.claim.aiTriageHint).toBeUndefined();
+  });
+
+  it("clears a stale hint on reclassification if no advisor is configured this time", async () => {
+    const claimId = await issuedClaim("collision on highway");
+
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      stubAdvisor({
+        suggestedPriority: "LOW",
+        suggestedClaimType: "MOTOR_OTHER",
+        rationale: "first pass",
+      }),
+    );
+    const first = await advised.classify({ claimId });
+    expect(first.claim.aiTriageHint).toBeDefined();
+
+    // Reclassify through a queue with no advisor at all (e.g. LOCAL_LLM_MODEL
+    // unset after a restart) — the persisted claim must not still show it.
+    const second = await queue.classify({ claimId });
+    expect(second.claim.aiTriageHint).toBeUndefined();
   });
 });
 

@@ -540,6 +540,23 @@ export default function Page() {
                           </div>
                         )}
 
+                        {claim.aiTriageHint && (
+                          <div className="trace">
+                            AI triage hint (advisory only —{" "}
+                            {claim.aiTriageHint.agreesWithRules ? "agrees" : "disagrees"} with the
+                            rules above):{" "}
+                            <strong
+                              className={
+                                claim.aiTriageHint.agreesWithRules ? undefined : "fraud-flag"
+                              }
+                            >
+                              {claim.aiTriageHint.suggestedPriority} /{" "}
+                              {claim.aiTriageHint.suggestedClaimType}
+                            </strong>
+                            <div>{claim.aiTriageHint.rationale}</div>
+                          </div>
+                        )}
+
                         {claim.fraudScore !== undefined && (
                           <div className="trace">
                             fraud risk:{" "}
