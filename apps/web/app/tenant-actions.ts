@@ -23,13 +23,13 @@ export async function getTenants(): Promise<TenantInfo[]> {
 }
 
 /**
- * Self-serve onboarding: point OpenCover at a REST service implementing the
+ * Self-serve onboarding: point PC Core at a REST service implementing the
  * policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository
  * and apps/mock-insurer for a reference implementation) and get back a new
- * tenant + API key — no restart, no code change on OpenCover's side.
+ * tenant + API key — no restart, no code change on PC Core's side.
  *
  * Optionally also points this tenant's claims-AI IDP extraction at a
- * self-hosted Ollama model instead of the default regex extractor — OpenCover
+ * self-hosted Ollama model instead of the default regex extractor — PC Core
  * ships no hosted model, so this is how a company brings their own.
  */
 export async function registerConnector(

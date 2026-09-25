@@ -7,7 +7,7 @@ buildDemoRegistry()
   .then(async (registry) => {
     const app = buildServer(registry);
     const address = await app.listen({ port, host: "0.0.0.0" });
-    console.log(`OpenCover api listening on ${address}`);
+    console.log(`PC Core api listening on ${address}`);
     console.log(`  demo tenant  -- Authorization: Bearer ${DEMO_API_KEY}`);
     console.log(`  beta tenant  -- Authorization: Bearer ${BETA_API_KEY}`);
     console.log(`  register your own: POST /connectors/register {name, policyBaseUrl}`);

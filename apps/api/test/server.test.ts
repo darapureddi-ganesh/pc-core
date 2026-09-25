@@ -10,7 +10,7 @@ const DEMO_KEY = "pk_test_demo";
 const newRegistry = () => {
   const registry = new TenantRegistry();
   registry.register(
-    { tenantId: "demo", name: "OpenCover demo" },
+    { tenantId: "demo", name: "PC Core demo" },
     { policy: new InMemoryPolicyRepository() },
     DEMO_KEY,
   );
@@ -283,7 +283,7 @@ describe("multi-tenancy — the same API, routed to different connectors", () =>
     const app = newApp();
     const res = await app.inject({ method: "GET", url: "/tenants" });
     expect(res.statusCode).toBe(200);
-    expect(res.json()).toEqual([{ tenantId: "demo", name: "OpenCover demo" }]);
+    expect(res.json()).toEqual([{ tenantId: "demo", name: "PC Core demo" }]);
 
     await app.close();
   });

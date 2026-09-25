@@ -66,7 +66,7 @@ const HANDLING_DAYS: Record<Complexity, number> = {
 };
 
 /**
- * Rule-based classification pipeline — no hosted ML (OpenCover ships no model, same
+ * Rule-based classification pipeline — no hosted ML (PC Core ships no model, same
  * stance as @pc-core/claims-ai's fraud scorer). A deterministic baseline heuristic
  * runs first; a company's own rules (VIP policyholder, urgent keywords, amount
  * thresholds) can then override it. Both the baseline and the final decision are

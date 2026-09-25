@@ -10,7 +10,7 @@ export const SESSION_COOKIE = "pc_portal_session";
 const SESSION_VALUE = "authenticated";
 
 function secret(): string {
-  return process.env.PORTAL_AUTH_SECRET ?? "opencover-demo-secret-change-me";
+  return process.env.PORTAL_AUTH_SECRET ?? "pc-core-demo-secret-change-me";
 }
 
 function toHex(buf: ArrayBuffer): string {
@@ -43,5 +43,5 @@ export async function verifySessionToken(token: string | undefined | null): Prom
 }
 
 export function checkPassword(password: string): boolean {
-  return password.length > 0 && password === (process.env.PORTAL_PASSWORD ?? "opencover-demo");
+  return password.length > 0 && password === (process.env.PORTAL_PASSWORD ?? "pc-core-demo");
 }

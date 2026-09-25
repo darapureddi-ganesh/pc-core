@@ -1,9 +1,8 @@
-# OpenCover
+# PC Core
 
-An open-source **P&C insurance core** — motor line. A config-over-code,
-effective-dated policy platform in the spirit of Guidewire / Duck Creek, built
-in the open. (Package scope and directory names are still `@pc-core/*` /
-`pc-core` internally — this is a branding rename, not a package/repo rename.)
+**Policy & Claims Core** — an open-source **P&C insurance core** — motor
+line. A config-over-code, effective-dated policy platform in the spirit of
+Guidewire / Duck Creek, built in the open.
 
 A working motor core on an effective-dated spine: **policy lifecycle, rating,
 billing, claims, and documents**, with a Next.js agent portal on top. All logic
@@ -20,7 +19,7 @@ pnpm dev
 ```
 
 Then open **http://localhost:3001**, sign in with the demo password
-(`opencover-demo`, see "Portal login + tenant switching" below), and click
+(`pc-core-demo`, see "Portal login + tenant switching" below), and click
 through the whole lifecycle: enter a vehicle, get a config-driven quote,
 bind, issue — the portal then auto-invoices the premium, lets you pay it
 off, and links straight to the generated **policy schedule** and
@@ -178,7 +177,7 @@ tenant-level authorization (the API already does that per-connector via
 isn't wide open to anyone with the URL.
 
 ```bash
-PORTAL_PASSWORD=your-password       # default: opencover-demo
+PORTAL_PASSWORD=your-password       # default: pc-core-demo
 PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
 ```
 
@@ -198,7 +197,7 @@ contract and get back a tenant + API key immediately, with a one-click
 "switch the portal to this tenant." Pointed at the default URL
 (`http://127.0.0.1:4000`, `apps/mock-insurer`, so run `pnpm platform`), a
 freshly-registered tenant's issued policies come back numbered by
-**that system's own scheme** (`BETA-000001`), not OpenCover's — proof the
+**that system's own scheme** (`BETA-000001`), not PC Core's — proof the
 connector is genuinely routed, not just relabeled.
 
 ## Billing & claims (P5)
@@ -294,7 +293,7 @@ insurer.
 
 ## Bring your own backend (the Connector SDK)
 
-OpenCover is a platform, not a silo: a company connects **their own system** and
+PC Core is a platform, not a silo: a company connects **their own system** and
 every feature above works against **their data**. Services never touch a database
 directly — only the storage contracts in `@pc-core/ports`
 (`PolicyRepository`, `BillingRepository`, `ClaimsRepository`). A connector is
@@ -302,14 +301,14 @@ just an implementation of those interfaces, against a database or over HTTP.
 
 The API is **multi-tenant and self-serve**. Two tenants ship seeded for the demo:
 
-- **`demo`** — OpenCover's own in-memory store
+- **`demo`** — PC Core's own in-memory store
 - **`beta`** — a policy store that lives entirely in a separate process
   (`apps/mock-insurer`) with a *deliberately different internal schema*
   (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
   over HTTP via `RemoteHttpPolicyRepository`
 
 Any third company can **onboard at runtime, no restart, no code change** — point
-OpenCover at a REST service implementing the connector contract and get back an
+PC Core at a REST service implementing the connector contract and get back an
 API key:
 
 ```bash
@@ -325,7 +324,7 @@ per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header
 curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
   -H 'content-type: application/json' -d '{ ...quote... }'
 # Gamma's issued policy is numbered by GAMMA'S OWN system and stored in its own
-# schema — OpenCover never sees it. Beta's the same, via the seeded demo tenant.
+# schema — PC Core never sees it. Beta's the same, via the seeded demo tenant.
 ```
 
 Run the platform demo (API + a stand-in external insurer, printing both demo
@@ -349,7 +348,7 @@ Two pillars of the claims-technology matrix run as pure services behind
   deterministic heuristic on a malformed reply or a failed model call, so
   fraud detection never goes silent because a model had a bad day.
 
-OpenCover ships no hosted model — these are honest v1s proving the pillars
+PC Core ships no hosted model — these are honest v1s proving the pillars
 end-to-end and defining the seam a company's own model plugs into per tenant
 (`ClaimsService`'s third constructor argument). FNOL returns `fraudScore`,
 `fraudSignals`, and `extractedFields`.
@@ -377,7 +376,7 @@ of `OllamaLlmClient` wherever `ClaimsAiProviders` is built.
 ### Running your own local model, on your own infrastructure
 
 The Ollama flow above is for onboarding an **external** company's connector.
-A company running OpenCover itself — on their own servers, with no internet
+A company running PC Core itself — on their own servers, with no internet
 egress required — can instead point their own primary tenant's claims-AI at
 a local model server with three environment variables, no code change:
 
@@ -422,7 +421,7 @@ level that doesn't exist), and degrades to no opinion at all — not a guess —
 on a malformed reply or a failed model call. The portal's Claims panel shows
 the hint next to the rules' own classification when one is present.
 
-OpenCover ships no model weights or runtime binaries of its own; bring your
+PC Core ships no model weights or runtime binaries of its own; bring your
 own local server and point these variables at it.
 
 ### Vehicle & document verification (VAHAN / DigiLocker)
