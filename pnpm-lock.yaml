@@ -65,6 +65,9 @@ importers:
       '@pc-core/products':
         specifier: workspace:*
         version: link:../../packages/products
+      '@pc-core/schema-mapping':
+        specifier: workspace:*
+        version: link:../../packages/schema-mapping
       fastify:
         specifier: ^5.1.0
         version: 5.10.0
@@ -108,6 +111,9 @@ importers:
       '@pc-core/ports':
         specifier: workspace:*
         version: link:../ports
+      '@pc-core/schema-mapping':
+        specifier: workspace:*
+        version: link:../schema-mapping
       drizzle-orm:
         specifier: ^0.36.4
         version: 0.36.4(@types/pg@8.20.0)(@types/react@19.2.17)(pg@8.22.0)(react@19.2.8)
@@ -171,6 +177,12 @@ importers:
         version: link:../domain
 
   packages/products: {}
+
+  packages/schema-mapping:
+    dependencies:
+      '@pc-core/ports':
+        specifier: workspace:*
+        version: link:../ports
 
 packages:
 

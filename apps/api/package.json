@@ -19,6 +19,7 @@
     "@pc-core/forms": "workspace:*",
     "@pc-core/ports": "workspace:*",
     "@pc-core/products": "workspace:*",
+    "@pc-core/schema-mapping": "workspace:*",
     "fastify": "^5.1.0",
     "zod": "^3.24.1"
   }

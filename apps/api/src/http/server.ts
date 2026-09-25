@@ -1,5 +1,7 @@
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
+import { OllamaLlmClient } from "@pc-core/claims-ai";
+import { LlmPolicyMappingAdvisor, dryRunMapping } from "@pc-core/schema-mapping";
 import { ServiceError, type ServiceErrorCode } from "../service/errors.js";
 import type { TenantRegistry, TenantServices } from "../tenants.js";
 
@@ -71,6 +73,33 @@ const overrideSchema = z.object({
   reason: z.string().min(1),
   overrideBy: z.string().min(1),
 });
+const policyFieldMappingSchema = z.object({
+  fields: z.object({
+    policyId: z.string(),
+    policyNumber: z.string(),
+    productCode: z.string(),
+    productVersion: z.string(),
+    status: z.string(),
+    termFrom: z.string(),
+    termTo: z.string(),
+    base: z.string(),
+    baseRecordedAt: z.string(),
+    transactions: z.string(),
+    insuredName: z.string().optional(),
+    cancelledEffectiveFrom: z.string().optional(),
+    customerId: z.string().optional(),
+  }),
+  statusValues: z.record(z.enum(["QUOTED", "BOUND", "ISSUED", "CANCELLED"])),
+  baseIsJsonEncoded: z.boolean().optional(),
+  transactionFields: z.object({
+    txnType: z.string(),
+    effectiveFrom: z.string(),
+    recordedAt: z.string(),
+    change: z.string(),
+  }),
+  transactionChangeIsJsonEncoded: z.boolean().optional(),
+});
+
 const registerConnectorSchema = z.object({
   name: z.string().min(1),
   policyBaseUrl: z.string().url(),
@@ -78,9 +107,50 @@ const registerConnectorSchema = z.object({
    * for this tenant, instead of the default regex extractor */
   ollamaModel: z.string().optional(),
   ollamaBaseUrl: z.string().url().optional(),
+  /** a human-confirmed mapping from POST /connectors/propose-mapping, for a
+   * company whose policy service returns records in its own shape instead
+   * of speaking PolicyAggregate directly (see @pc-core/schema-mapping) */
+  policyFieldMapping: policyFieldMappingSchema.optional(),
+});
+
+const proposeMappingSchema = z.object({
+  /** a handful of real records from the company's own policy service, in
+   * whatever shape it already returns them */
+  sampleRecords: z.array(z.unknown()).min(1),
+  /** required: proposing a mapping has no rules-based fallback — this is
+   * the one thing in the whole platform that genuinely needs a model */
+  ollamaModel: z.string().min(1),
+  ollamaBaseUrl: z.string().url().optional(),
 });
 
 const DEFAULT_TENANT = "demo";
+
+const LOCAL_MODEL_HOSTS = new Set(["127.0.0.1", "localhost", "::1"]);
+
+/**
+ * `ollamaBaseUrl` is caller-controlled on both /connectors/register and
+ * /connectors/propose-mapping. Without this check, an unauthenticated caller
+ * could point the server at an arbitrary URL — including internal-network
+ * services — and have it POST sample records / claim data there (SSRF and
+ * data exfiltration). The whole feature this URL exists for is "point at
+ * YOUR OWN local model server", so restricting it to loopback hosts costs
+ * nothing real while closing that off.
+ */
+function assertLocalModelUrl(url: string | undefined): void {
+  if (!url) return;
+  let hostname: string;
+  try {
+    hostname = new URL(url).hostname;
+  } catch {
+    throw new ServiceError(`ollamaBaseUrl is not a valid URL`, "BAD_REQUEST");
+  }
+  if (!LOCAL_MODEL_HOSTS.has(hostname)) {
+    throw new ServiceError(
+      `ollamaBaseUrl must point at a local model server (127.0.0.1/localhost), got "${hostname}"`,
+      "BAD_REQUEST",
+    );
+  }
+}
 
 const httpStatus = (code: ServiceErrorCode): number =>
   code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
@@ -134,14 +204,41 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   // policy connector contract and get back a tenant ID + API key. No code
   // change or redeploy on PC Core's side — this is the "connect my system" door.
   app.post("/connectors/register", async (req, reply) => {
-    const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl } =
+    const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl, policyFieldMapping } =
       registerConnectorSchema.parse(req.body);
+    assertLocalModelUrl(ollamaBaseUrl);
     const tenant = registry.registerConnector(
       name,
       policyBaseUrl,
       ollamaModel ? { model: ollamaModel, baseUrl: ollamaBaseUrl } : undefined,
+      policyFieldMapping,
     );
     return reply.status(201).send(tenant);
+  });
+
+  // A company's policy service usually returns records in ITS OWN shape, not
+  // PolicyAggregate directly. This proposes the field mapping a local model
+  // infers from a few real sample records — a PROPOSAL only: dryRun below
+  // shows whether it actually maps+validates cleanly, and a person is meant
+  // to review it before passing it back as policyFieldMapping to
+  // /connectors/register above. No mapping is ever applied automatically.
+  app.post("/connectors/propose-mapping", async (req, reply) => {
+    const { sampleRecords, ollamaModel, ollamaBaseUrl } = proposeMappingSchema.parse(
+      req.body,
+    );
+    assertLocalModelUrl(ollamaBaseUrl);
+    const advisor = new LlmPolicyMappingAdvisor(
+      new OllamaLlmClient({ model: ollamaModel, baseUrl: ollamaBaseUrl }),
+    );
+    const mapping = await advisor.proposeMapping(sampleRecords);
+    if (!mapping) {
+      return reply.status(422).send({
+        error:
+          "the model could not propose a usable mapping from these samples — try more/clearer sample records, or write the mapping by hand",
+      });
+    }
+    const dryRun = dryRunMapping(sampleRecords, mapping);
+    return reply.status(200).send({ mapping, dryRun });
   });
 
   // ── customers ────────────────────────────────────────────────────────────
