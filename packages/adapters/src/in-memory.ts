@@ -14,7 +14,7 @@ import type {
 } from "@pc-core/ports";
 
 /**
- * The reference adapter every connector is measured against: what OpenCover's
+ * The reference adapter every connector is measured against: what PC Core's
  * own demo tenant uses. A real connector swaps these for something backed by
  * a company's actual database, but the shape — create/get/save(/list) — is
  * exactly this.

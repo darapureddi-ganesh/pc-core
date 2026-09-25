@@ -4,10 +4,10 @@ import { toBeta, toContract, type BetaRecord } from "./store.js";
 
 /**
  * A stand-in for "a company's own system" — its own internal schema
- * (see store.ts), fronted by a thin HTTP service implementing OpenCover's
+ * (see store.ts), fronted by a thin HTTP service implementing PC Core's
  * documented policy connector contract (see
  * @pc-core/adapters RemoteHttpPolicyRepository). This is what a real
- * integration looks like: OpenCover never sees Beta's schema, only this
+ * integration looks like: PC Core never sees Beta's schema, only this
  * boundary.
  */
 const app = Fastify({ logger: false });
@@ -42,7 +42,7 @@ app.post("/policies/next-number", async () => {
 });
 
 // Debug-only: dump Beta's RAW internal records (not the contract shape) so a
-// demo can show that OpenCover's data really is stored in this system's own
+// demo can show that PC Core's data really is stored in this system's own
 // schema. Not part of the connector contract.
 app.get("/_raw", async () => [...table.values()]);
 

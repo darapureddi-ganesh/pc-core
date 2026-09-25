@@ -120,7 +120,7 @@ function buildServices(
  * as the in-memory one, just durable (see packages/db/migrations/0002_jsonb_adapters.sql).
  * Used when DATABASE_URL is set, so a pilot can run on infra a company
  * actually controls (e.g. India's data-localization requirement) instead of
- * OpenCover's own in-memory demo store.
+ * PC Core's own in-memory demo store.
  */
 export function buildPostgresConnector(db: Db, numberPrefix = "PC-2026"): Connector {
   return {
@@ -184,13 +184,13 @@ export class TenantRegistry {
   /**
    * Self-serve onboarding: a company points us at a REST service implementing
    * the policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository)
-   * and gets back a tenant ID + API key. No code changes on OpenCover's side.
+   * and gets back a tenant ID + API key. No code changes on PC Core's side.
    *
    * Optionally also points claims-AI's IDP extraction AND fraud scoring, plus
    * the claim queue's advisory triage hint, at a self-hosted Ollama model for
    * this tenant (see @pc-core/claims-ai's OllamaLlmClient / LlmFraudScorer /
    * LlmTriageAdvisor) instead of the default regex extractor and heuristic
-   * scorer — OpenCover ships no hosted model of its own, so this is how a
+   * scorer — PC Core ships no hosted model of its own, so this is how a
    * company brings their own. The triage hint stays advisory only; it never
    * changes the deterministic priority/claimType ClaimQueueService sets.
    */
@@ -240,13 +240,13 @@ export const BETA_API_KEY = "pk_beta";
 
 /**
  * Reads LOCAL_LLM_MODEL / LOCAL_LLM_BASE_URL / LOCAL_LLM_API_KEY from the
- * environment. Set only when a company running OpenCover on their OWN
+ * environment. Set only when a company running PC Core on their OWN
  * infrastructure has a local model server up (llama.cpp's llama-server, LM
  * Studio, vLLM, Ollama's OpenAI-compatible endpoint — anything speaking the
  * standard chat-completions shape) and wants their primary tenant's own
  * claims-AI (fraud scoring, IDP extraction) to use it instead of the
  * built-in deterministic defaults. No cloud call, no model shipped by
- * OpenCover — see OpenAiCompatibleLlmClient.
+ * PC Core — see OpenAiCompatibleLlmClient.
  */
 function localLlmOptionsFromEnv(): OpenAiCompatibleClientOptions | undefined {
   const model = process.env.LOCAL_LLM_MODEL;
@@ -298,7 +298,7 @@ export async function buildDemoRegistry(
     const { db } = createDb(databaseUrl);
     await seedPostgresHandlers(db, DEMO_HANDLERS);
     registry.register(
-      { tenantId: "demo", name: "OpenCover demo (Postgres)" },
+      { tenantId: "demo", name: "PC Core demo (Postgres)" },
       buildPostgresConnector(db),
       DEMO_API_KEY,
       demoClaimsAi,
@@ -307,7 +307,7 @@ export async function buildDemoRegistry(
     );
   } else {
     registry.register(
-      { tenantId: "demo", name: "OpenCover demo (in-memory)" },
+      { tenantId: "demo", name: "PC Core demo (in-memory)" },
       { policy: new InMemoryPolicyRepository("PC-2026") },
       DEMO_API_KEY,
       demoClaimsAi,

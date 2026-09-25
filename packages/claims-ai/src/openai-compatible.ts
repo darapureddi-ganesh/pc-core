@@ -20,7 +20,7 @@ export interface OpenAiCompatibleClientOptions {
  * text-generation-webui, and Ollama's own `/v1/chat/completions` endpoint all
  * implement it. This is the "bring literally any local server" seam: a
  * company runs whatever runtime they already have on their own infrastructure
- * and points OpenCover at it — no cloud call, no model shipped by OpenCover.
+ * and points PC Core at it — no cloud call, no model shipped by PC Core.
  *
  * Same swappable-provider shape as OllamaLlmClient: implements LlmClient's
  * single `complete` method, so it drops straight into LlmDocumentExtractor

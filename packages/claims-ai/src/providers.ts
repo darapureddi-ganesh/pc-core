@@ -68,7 +68,7 @@ export interface LlmClient {
  * It asks the model for strict JSON and validates the reply; any malformed or
  * partial response degrades safely to empty fields, so a bad model output can
  * never crash claim intake. This is the template a company fills in with their
- * chosen model — OpenCover itself ships no model.
+ * chosen model — PC Core itself ships no model.
  */
 export class LlmDocumentExtractor implements DocumentExtractor {
   constructor(private readonly llm: LlmClient) {}
@@ -102,7 +102,7 @@ const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
  * failed model call falls back to the deterministic `scoreFraudRisk` — fraud
  * detection never goes silent just because a model had a bad day, and FNOL
  * is never blocked by it. This is the template a company fills in with their
- * chosen model (Claude, GPT, a local Ollama model) — OpenCover itself ships
+ * chosen model (Claude, GPT, a local Ollama model) — PC Core itself ships
  * no hosted model.
  */
 export class LlmFraudScorer implements FraudScorer {
@@ -138,7 +138,7 @@ const VALID_CLAIM_TYPES = new Set(["MOTOR_ACCIDENT", "MOTOR_THEFT", "MOTOR_OTHER
  * "HIGH", never invent a priority level that doesn't exist in the rules
  * pipeline. Degrades to no opinion (`null`) on a malformed reply or a failed
  * model call; a triage hint that isn't there is always safe, an invented one
- * wouldn't be. OpenCover itself ships no hosted model.
+ * wouldn't be. PC Core itself ships no hosted model.
  */
 export class LlmTriageAdvisor implements TriageAdvisor {
   constructor(private readonly llm: LlmClient) {}

@@ -130,9 +130,9 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   // ── platform ─────────────────────────────────────────────────────────────
   app.get("/tenants", async () => registry.list());
 
-  // Self-serve onboarding: point OpenCover at a REST service implementing the
+  // Self-serve onboarding: point PC Core at a REST service implementing the
   // policy connector contract and get back a tenant ID + API key. No code
-  // change or redeploy on OpenCover's side — this is the "connect my system" door.
+  // change or redeploy on PC Core's side — this is the "connect my system" door.
   app.post("/connectors/register", async (req, reply) => {
     const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl } =
       registerConnectorSchema.parse(req.body);
