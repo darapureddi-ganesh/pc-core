@@ -7,12 +7,17 @@ buildDemoRegistry()
   .then(async (registry) => {
     const app = buildServer(registry);
     const address = await app.listen({ port, host: "0.0.0.0" });
-    console.log(`pc-core api listening on ${address}`);
+    console.log(`OpenCover api listening on ${address}`);
     console.log(`  demo tenant  -- Authorization: Bearer ${DEMO_API_KEY}`);
     console.log(`  beta tenant  -- Authorization: Bearer ${BETA_API_KEY}`);
     console.log(`  register your own: POST /connectors/register {name, policyBaseUrl}`);
     if (process.env.DATABASE_URL) {
       console.log(`  demo tenant is Postgres-backed (DATABASE_URL set)`);
+    }
+    if (process.env.LOCAL_LLM_MODEL) {
+      console.log(
+        `  demo tenant's fraud scoring + IDP extraction run against local model "${process.env.LOCAL_LLM_MODEL}" (LOCAL_LLM_MODEL set)`,
+      );
     }
   })
   .catch((err) => {

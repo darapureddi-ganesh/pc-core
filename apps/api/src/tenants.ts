@@ -3,11 +3,14 @@ import {
   InMemoryAssignmentLogRepository,
   InMemoryBillingRepository,
   InMemoryClaimsRepository,
+  InMemoryCustomerRepository,
   InMemoryHandlersRepository,
   InMemoryPolicyRepository,
+  MockVehicleRegistry,
   PostgresAssignmentLogRepository,
   PostgresBillingRepository,
   PostgresClaimsRepository,
+  PostgresCustomerRepository,
   PostgresHandlersRepository,
   PostgresPolicyRepository,
   RemoteHttpPolicyRepository,
@@ -15,8 +18,11 @@ import {
 import { createDb, type Db } from "@pc-core/db/client";
 import {
   LlmDocumentExtractor,
+  LlmFraudScorer,
   OllamaLlmClient,
+  OpenAiCompatibleLlmClient,
   type OllamaClientOptions,
+  type OpenAiCompatibleClientOptions,
 } from "@pc-core/claims-ai";
 import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
@@ -24,6 +30,7 @@ import { PolicyService } from "./service/policy-service.js";
 import { BillingService } from "./service/billing-service.js";
 import { ClaimsService } from "./service/claims-service.js";
 import { ClaimQueueService } from "./service/claim-queue-service.js";
+import { CustomerService } from "./service/customer-service.js";
 import { DocumentService } from "./service/document-service.js";
 
 /** The full per-tenant service bundle the HTTP layer resolves and dispatches to. */
@@ -33,6 +40,7 @@ export interface TenantServices {
   billing: BillingService;
   claims: ClaimsService;
   claimQueue: ClaimQueueService;
+  customers: CustomerService;
   documents: DocumentService;
 }
 
@@ -93,8 +101,13 @@ function buildServices(
     connector.handlers ?? new InMemoryHandlersRepository(seedHandlers),
     connector.assignmentLog ?? new InMemoryAssignmentLogRepository(),
   );
+  const customers = new CustomerService(
+    connector.customers ?? new InMemoryCustomerRepository(),
+    policy,
+    claimsRepo,
+  );
   const documents = new DocumentService(policy);
-  return { info, policy, billing, claims, claimQueue, documents };
+  return { info, policy, billing, claims, claimQueue, customers, documents };
 }
 
 /**
@@ -102,7 +115,7 @@ function buildServices(
  * as the in-memory one, just durable (see packages/db/migrations/0002_jsonb_adapters.sql).
  * Used when DATABASE_URL is set, so a pilot can run on infra a company
  * actually controls (e.g. India's data-localization requirement) instead of
- * pc-core's own in-memory demo store.
+ * OpenCover's own in-memory demo store.
  */
 export function buildPostgresConnector(db: Db, numberPrefix = "PC-2026"): Connector {
   return {
@@ -111,6 +124,7 @@ export function buildPostgresConnector(db: Db, numberPrefix = "PC-2026"): Connec
     claims: new PostgresClaimsRepository(db),
     handlers: new PostgresHandlersRepository(db),
     assignmentLog: new PostgresAssignmentLogRepository(db),
+    customers: new PostgresCustomerRepository(db),
   };
 }
 
@@ -164,12 +178,13 @@ export class TenantRegistry {
   /**
    * Self-serve onboarding: a company points us at a REST service implementing
    * the policy connector contract (see @pc-core/adapters RemoteHttpPolicyRepository)
-   * and gets back a tenant ID + API key. No code changes on pc-core's side.
+   * and gets back a tenant ID + API key. No code changes on OpenCover's side.
    *
-   * Optionally also points claims-AI's IDP extraction at a self-hosted Ollama
-   * model for this tenant (see @pc-core/claims-ai's OllamaLlmClient) instead
-   * of the default regex extractor — pc-core ships no hosted model of its
-   * own, so this is how a company brings their own.
+   * Optionally also points claims-AI's IDP extraction AND fraud scoring at a
+   * self-hosted Ollama model for this tenant (see @pc-core/claims-ai's
+   * OllamaLlmClient / LlmFraudScorer) instead of the default regex extractor
+   * and heuristic scorer — OpenCover ships no hosted model of its own, so
+   * this is how a company brings their own.
    */
   registerConnector(
     name: string,
@@ -179,7 +194,10 @@ export class TenantRegistry {
     const info: TenantInfo = { tenantId: newTenantId(name), name };
     const apiKey = newApiKey();
     const claimsAi: ClaimsAiProviders | undefined = ollama
-      ? { extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)) }
+      ? {
+          extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)),
+          fraudScorer: new LlmFraudScorer(new OllamaLlmClient(ollama)),
+        }
       : undefined;
     this.register(
       info,
@@ -208,6 +226,26 @@ export const DEMO_API_KEY = "pk_demo";
 export const BETA_API_KEY = "pk_beta";
 
 /**
+ * Reads LOCAL_LLM_MODEL / LOCAL_LLM_BASE_URL / LOCAL_LLM_API_KEY from the
+ * environment. Set only when a company running OpenCover on their OWN
+ * infrastructure has a local model server up (llama.cpp's llama-server, LM
+ * Studio, vLLM, Ollama's OpenAI-compatible endpoint — anything speaking the
+ * standard chat-completions shape) and wants their primary tenant's own
+ * claims-AI (fraud scoring, IDP extraction) to use it instead of the
+ * built-in deterministic defaults. No cloud call, no model shipped by
+ * OpenCover — see OpenAiCompatibleLlmClient.
+ */
+function localLlmOptionsFromEnv(): OpenAiCompatibleClientOptions | undefined {
+  const model = process.env.LOCAL_LLM_MODEL;
+  if (!model) return undefined;
+  return {
+    model,
+    baseUrl: process.env.LOCAL_LLM_BASE_URL,
+    apiKey: process.env.LOCAL_LLM_API_KEY,
+  };
+}
+
+/**
  * The demo registry: a "demo" tenant (Postgres-backed when DATABASE_URL is
  * set, in-memory otherwise), and a "beta" tenant whose policy data lives
  * entirely in a separate process (apps/mock-insurer) reached only over HTTP,
@@ -217,23 +255,41 @@ export const BETA_API_KEY = "pk_beta";
 export async function buildDemoRegistry(
   betaBaseUrl = process.env.BETA_URL ?? "http://127.0.0.1:4000",
   databaseUrl = process.env.DATABASE_URL,
+  localLlm = localLlmOptionsFromEnv(),
 ): Promise<TenantRegistry> {
   const registry = new TenantRegistry();
+
+  // Demo tenant gets a VAHAN-style vehicle registry wired in, so filing a
+  // claim with mismatched vehicle details produces a live
+  // VEHICLE_DETAILS_MISMATCH fraud signal (see MockVehicleRegistry's
+  // hardcoded plates, e.g. KA01AB1234) — mock only, no real network call.
+  // If a local model server is configured (see localLlmOptionsFromEnv), its
+  // fraud scoring and IDP extraction run behind that model too — rules stay
+  // authoritative either way (see LlmFraudScorer/checkVehicleDetails's
+  // fallback-to-deterministic behavior).
+  const demoClaimsAi: ClaimsAiProviders = {
+    vehicleRegistry: new MockVehicleRegistry(),
+    ...(localLlm && {
+      extractor: new LlmDocumentExtractor(new OpenAiCompatibleLlmClient(localLlm)),
+      fraudScorer: new LlmFraudScorer(new OpenAiCompatibleLlmClient(localLlm)),
+    }),
+  };
 
   if (databaseUrl) {
     const { db } = createDb(databaseUrl);
     await seedPostgresHandlers(db, DEMO_HANDLERS);
     registry.register(
-      { tenantId: "demo", name: "pc-core demo (Postgres)" },
+      { tenantId: "demo", name: "OpenCover demo (Postgres)" },
       buildPostgresConnector(db),
       DEMO_API_KEY,
+      demoClaimsAi,
     );
   } else {
     registry.register(
-      { tenantId: "demo", name: "pc-core demo (in-memory)" },
+      { tenantId: "demo", name: "OpenCover demo (in-memory)" },
       { policy: new InMemoryPolicyRepository("PC-2026") },
       DEMO_API_KEY,
-      undefined,
+      demoClaimsAi,
       DEMO_HANDLERS,
     );
   }

@@ -27,8 +27,13 @@ export interface ProductTables {
   ncbScale: Record<string, number>;
   /** od_base[zone][ccBand][ageBand] -> rate fraction of IDV */
   od_base: Record<string, Record<string, Record<string, number>>>;
-  /** tp_tariff[ccBand] -> flat amount */
+  /** tp_tariff[ccBand] -> flat amount (annual, IRDAI-mandated) */
   tp_tariff: Record<string, number>;
+  /** tp_tariff_new_vehicle_3yr[ccBand] -> flat amount — the single lump-sum
+   * TP premium for a brand-new car's mandatory 3-year term (Motor Vehicles Act
+   * s.146 requires new private cars to be issued a 3-year TP-only policy).
+   * Optional: only products that model new-vehicle sales need this table. */
+  tp_tariff_new_vehicle_3yr?: Record<string, number>;
   /** flat PA (owner-driver) premium */
   paRate: number;
   /** voluntary-deductible amount (string key) -> OD discount fraction */
@@ -108,6 +113,9 @@ export interface QuoteInput {
   coverages: { tpSelected: boolean };
   /** chosen voluntary deductible; higher deductible earns an OD discount */
   voluntaryDeductible?: number;
+  /** brand-new car, first registration — prices TP as the mandatory 3-year
+   * lump sum (tp_tariff_new_vehicle_3yr) instead of the annual TP tariff */
+  newVehicle?: boolean;
 }
 
 export interface RatingResult {

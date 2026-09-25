@@ -26,6 +26,8 @@ export interface QuoteCommand {
   term: { from: string; to: string };
   risk: MotorRisk;
   insured?: { name: string };
+  /** links the resulting policy to a Customer identity (see CustomerService) */
+  customerId?: string;
 }
 
 /**
@@ -54,6 +56,7 @@ export class PolicyService {
       baseRecordedAt: new Date().toISOString(),
       transactions: [],
       insured: cmd.insured,
+      customerId: cmd.customerId,
     };
     await this.repo.create(policy);
     return { policyId: policy.policyId, rating };

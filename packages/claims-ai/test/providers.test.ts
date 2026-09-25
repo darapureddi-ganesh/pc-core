@@ -3,6 +3,7 @@ import {
   RegexDocumentExtractor,
   HeuristicFraudScorer,
   LlmDocumentExtractor,
+  LlmFraudScorer,
   type LlmClient,
 } from "../src/index.js";
 
@@ -61,5 +62,61 @@ describe("LlmDocumentExtractor — the real-model seam", () => {
     };
     const fields = await new LlmDocumentExtractor(throwing).extract("...");
     expect(fields).toEqual({ dates: [] });
+  });
+});
+
+describe("LlmFraudScorer — the real-model seam", () => {
+  it("parses a strict-JSON score and signals from the model", async () => {
+    const llm = stubLlm(
+      '{"score":0.7,"signals":["claim filed the same week as a large IDV increase"]}',
+    );
+    const result = await new LlmFraudScorer(llm).score({
+      priorClaimsOnPolicy: 0,
+      daysSincePolicyStart: 40,
+    });
+    expect(result.score).toBe(0.7);
+    expect(result.signals).toEqual([
+      "claim filed the same week as a large IDV increase",
+    ]);
+  });
+
+  it("tolerates a model that wraps JSON in prose / code fences", async () => {
+    const llm = stubLlm('Here is my assessment:\n```json\n{"score":0.2,"signals":[]}\n```');
+    const result = await new LlmFraudScorer(llm).score({
+      priorClaimsOnPolicy: 0,
+      daysSincePolicyStart: 100,
+    });
+    expect(result.score).toBe(0.2);
+  });
+
+  it("clamps an out-of-range score into 0..1", async () => {
+    const llm = stubLlm('{"score":1.5,"signals":[]}');
+    const result = await new LlmFraudScorer(llm).score({
+      priorClaimsOnPolicy: 0,
+      daysSincePolicyStart: 100,
+    });
+    expect(result.score).toBe(1);
+  });
+
+  it("falls back to the deterministic heuristic on a malformed reply", async () => {
+    const result = await new LlmFraudScorer(stubLlm("not JSON at all")).score({
+      priorClaimsOnPolicy: 0,
+      daysSincePolicyStart: 5,
+    });
+    expect(result.score).toBeCloseTo(0.3, 5); // same as HeuristicFraudScorer
+    expect(result.signals).toContain("incident within 15 days of policy inception");
+  });
+
+  it("falls back to the deterministic heuristic when the LLM call throws", async () => {
+    const throwing: LlmClient = {
+      complete: async () => {
+        throw new Error("provider down");
+      },
+    };
+    const result = await new LlmFraudScorer(throwing).score({
+      priorClaimsOnPolicy: 2,
+      daysSincePolicyStart: 100,
+    });
+    expect(result.score).toBeCloseTo(0.5, 5); // same as HeuristicFraudScorer
   });
 });

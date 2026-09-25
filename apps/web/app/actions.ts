@@ -37,6 +37,7 @@ async function readError(res: Response): Promise<string> {
 export async function quotePolicy(cmd: {
   insured: { name: string };
   risk: QuoteInput;
+  customerId?: string;
 }): Promise<QuoteResult> {
   // The portal collects the risk; the product and a standard annual term are
   // fixed for this demo line.
@@ -45,6 +46,7 @@ export async function quotePolicy(cmd: {
     term: { from: "2026-01-01", to: "2027-01-01" },
     insured: cmd.insured,
     risk: cmd.risk,
+    customerId: cmd.customerId,
   };
   const res = await fetch(`${API}/quotes`, {
     method: "POST",

@@ -5,6 +5,8 @@ import type {
   BillingRepository,
   Claim,
   ClaimsRepository,
+  Customer,
+  CustomerRepository,
   Handler,
   HandlersRepository,
   PolicyAggregate,
@@ -12,7 +14,7 @@ import type {
 } from "@pc-core/ports";
 
 /**
- * The reference adapter every connector is measured against: what pc-core's
+ * The reference adapter every connector is measured against: what OpenCover's
  * own demo tenant uses. A real connector swaps these for something backed by
  * a company's actual database, but the shape — create/get/save(/list) — is
  * exactly this.
@@ -108,5 +110,23 @@ export class InMemoryAssignmentLogRepository implements AssignmentLogRepository 
     return this.entries
       .filter((e) => e.claimId === claimId)
       .map((e) => structuredClone(e));
+  }
+}
+
+export class InMemoryCustomerRepository implements CustomerRepository {
+  private readonly store = new Map<string, Customer>();
+
+  async create(customer: Customer): Promise<void> {
+    this.store.set(customer.customerId, structuredClone(customer));
+  }
+  async get(customerId: string): Promise<Customer | undefined> {
+    const found = this.store.get(customerId);
+    return found ? structuredClone(found) : undefined;
+  }
+  async save(customer: Customer): Promise<void> {
+    this.store.set(customer.customerId, structuredClone(customer));
+  }
+  async list(): Promise<Customer[]> {
+    return [...this.store.values()].map((c) => structuredClone(c));
   }
 }

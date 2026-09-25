@@ -2,18 +2,27 @@ import { randomUUID } from "node:crypto";
 import {
   HeuristicFraudScorer,
   RegexDocumentExtractor,
+  checkVehicleDetails,
   type DocumentExtractor,
   type ExtractedFields,
   type FraudScorer,
 } from "@pc-core/claims-ai";
-import type { Claim, ClaimsRepository } from "@pc-core/ports";
+import type { Claim, ClaimsRepository, VehicleRegistryPort } from "@pc-core/ports";
 import { ServiceError } from "./errors.js";
 import type { PolicyService } from "./policy-service.js";
 
 export interface ClaimsAiProviders {
   extractor?: DocumentExtractor;
   fraudScorer?: FraudScorer;
+  /** optional VAHAN-style vehicle registry lookup — a deterministic check
+   * comparing FNOL-declared vehicle identity fields against an authoritative
+   * record (see @pc-core/claims-ai's checkVehicleDetails). Skipped silently
+   * if not configured for the tenant, or if the registry has no record for
+   * the policy's registration number. */
+  vehicleRegistry?: VehicleRegistryPort;
 }
+
+const clamp01 = (n: number): number => Math.max(0, Math.min(1, n));
 
 const MS_PER_DAY = 24 * 60 * 60 * 1000;
 
@@ -44,11 +53,12 @@ function toFlatFields(fields: ExtractedFields): Record<string, string> {
  * text, and a fraud-risk score against this tenant's own claim history — both
  * behind swappable provider interfaces (DocumentExtractor / FraudScorer), so a
  * connected company can supply a real OCR/LLM or fraud model per tenant. The
- * defaults are pc-core's own regex extractor and heuristic scorer.
+ * defaults are OpenCover's own regex extractor and heuristic scorer.
  */
 export class ClaimsService {
   private readonly extractor: DocumentExtractor;
   private readonly fraudScorer: FraudScorer;
+  private readonly vehicleRegistry?: VehicleRegistryPort;
 
   constructor(
     private readonly repo: ClaimsRepository,
@@ -57,6 +67,7 @@ export class ClaimsService {
   ) {
     this.extractor = providers.extractor ?? new RegexDocumentExtractor();
     this.fraudScorer = providers.fraudScorer ?? new HeuristicFraudScorer();
+    this.vehicleRegistry = providers.vehicleRegistry;
   }
 
   async fnol(cmd: {
@@ -65,6 +76,14 @@ export class ClaimsService {
     cause: string;
     /** free-text FNOL note / OCR'd document text, run through IDP extraction */
     rawIntakeText?: string;
+    /** vehicle identity fields as declared by the claimant at FNOL, checked
+     * against this.vehicleRegistry (if configured) for a
+     * VEHICLE_DETAILS_MISMATCH signal. Ignored if no registry is configured. */
+    declaredVehicle?: {
+      chassisNumber?: string;
+      engineNumber?: string;
+      ownerName?: string;
+    };
   }): Promise<Claim> {
     const policy = await this.policies.get(cmd.policyId); // throws NOT_FOUND
     if (policy.status !== "ISSUED") {
@@ -90,6 +109,34 @@ export class ClaimsService {
       daysSincePolicyStart: daysBetween(policy.term.from, cmd.incidentDate),
     });
 
+    let fraudScore = score;
+    const fraudSignals = [...signals];
+
+    // Optional, deterministic: if this tenant has a vehicle registry
+    // configured, cross-check the declared vehicle identity against it.
+    // Silently skipped when no registry is configured or it has no record
+    // for this policy's registration number — never blocks FNOL.
+    if (this.vehicleRegistry) {
+      const regNo = policy.base.vehicle.registrationNo;
+      const record = regNo
+        ? await this.vehicleRegistry.lookupByRegistrationNumber(regNo)
+        : null;
+      if (record) {
+        const { signals: mismatchSignals } = checkVehicleDetails(
+          {
+            chassisNumber: cmd.declaredVehicle?.chassisNumber,
+            engineNumber: cmd.declaredVehicle?.engineNumber,
+            ownerName: cmd.declaredVehicle?.ownerName ?? policy.insured?.name,
+          },
+          record,
+        );
+        if (mismatchSignals.length) {
+          fraudSignals.push(...mismatchSignals);
+          fraudScore = clamp01(fraudScore + 0.35);
+        }
+      }
+    }
+
     const extractedFields = cmd.rawIntakeText
       ? toFlatFields(await this.extractor.extract(cmd.rawIntakeText))
       : undefined;
@@ -105,8 +152,8 @@ export class ClaimsService {
       reserveAmount: 0,
       settledAmount: 0,
       ...(extractedFields && { extractedFields }),
-      fraudScore: score,
-      fraudSignals: signals,
+      fraudScore,
+      fraudSignals,
     };
     await this.repo.create(claim);
     return claim;

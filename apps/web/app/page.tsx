@@ -56,6 +56,8 @@ export default function Page() {
   const [age, setAge] = useState(2);
   const [ncb, setNcb] = useState(25);
   const [addOns, setAddOns] = useState<string[]>(["ZERO_DEP"]);
+  const [newVehicle, setNewVehicle] = useState(false);
+  const [customerId, setCustomerId] = useState("");
 
   const [quote, setQuote] = useState<QuoteResult | null>(null);
   const [policy, setPolicy] = useState<Policy | null>(null);
@@ -108,7 +110,9 @@ export default function Page() {
           policy: { ncb },
           selectedAddOns: addOns,
           coverages: { tpSelected: true },
+          newVehicle,
         },
+        customerId: customerId || undefined,
       });
       setQuote(result);
       setPolicy(null);
@@ -275,6 +279,33 @@ export default function Page() {
               </option>
             ))}
           </select>
+        </div>
+
+        <div className="field">
+          <label>
+            <input
+              type="checkbox"
+              checked={newVehicle}
+              onChange={(e) => setNewVehicle(e.target.checked)}
+              style={{ marginRight: "0.4rem" }}
+            />
+            New vehicle (first registration) — prices TP as the mandatory
+            3-year lump sum instead of annual
+          </label>
+        </div>
+
+        <div className="field">
+          <label htmlFor="customerId">
+            Customer ID (optional — register one on the Customers page to
+            link this policy to their history)
+          </label>
+          <input
+            id="customerId"
+            type="text"
+            placeholder="paste a Customer ID, or leave blank"
+            value={customerId}
+            onChange={(e) => setCustomerId(e.target.value)}
+          />
         </div>
 
         <div className="field">

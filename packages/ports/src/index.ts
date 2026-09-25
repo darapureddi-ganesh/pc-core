@@ -21,3 +21,12 @@ export type {
 } from "./claims.js";
 
 export type { Connector, TenantInfo } from "./tenant.js";
+
+export type { Customer, CustomerRepository } from "./customer.js";
+
+export type { VehicleRecord, VehicleRegistryPort } from "./vehicle-registry.js";
+
+export type {
+  VerifiedDocument,
+  DocumentVerificationPort,
+} from "./document-verification.js";

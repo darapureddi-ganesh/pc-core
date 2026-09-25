@@ -8,6 +8,7 @@ export {
   RegexDocumentExtractor,
   HeuristicFraudScorer,
   LlmDocumentExtractor,
+  LlmFraudScorer,
 } from "./providers.js";
 export type {
   DocumentExtractor,
@@ -17,3 +18,13 @@ export type {
 
 export { OllamaLlmClient } from "./ollama.js";
 export type { OllamaClientOptions } from "./ollama.js";
+
+export { OpenAiCompatibleLlmClient } from "./openai-compatible.js";
+export type { OpenAiCompatibleClientOptions } from "./openai-compatible.js";
+
+export { checkVehicleDetails } from "./vehicle-verification.js";
+export type {
+  DeclaredVehicleDetails,
+  RegistryVehicleDetails,
+  VehicleVerificationResult,
+} from "./vehicle-verification.js";

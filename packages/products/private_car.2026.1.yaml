@@ -48,8 +48,14 @@ tables:
       "<=1000": { "0-3y": 0.026, "3-5y": 0.031, ">5y": 0.041 }
       "1000-1500": { "0-3y": 0.028, "3-5y": 0.033, ">5y": 0.043 }
       ">1500": { "0-3y": 0.032, "3-5y": 0.037, ">5y": 0.047 }
-  # statutory third-party tariff (flat amount) by cc band
+  # statutory third-party tariff (flat amount) by cc band — Motor Vehicles
+  # (Third Party Insurance Base Premium and Liability) Rules, 2022, Table I
+  # (effective 1 June 2022), Private Cars.
   tp_tariff: { "<=1000": 2094, "1000-1500": 3416, ">1500": 7897 }
+  # mandatory 3-year lump-sum TP premium for a brand-new private car's first
+  # registration (Motor Vehicles Act s.146) — same 2022 Rules notification,
+  # "New Private Car – Three year single premium".
+  tp_tariff_new_vehicle_3yr: { "<=1000": 6521, "1000-1500": 10640, ">1500": 24596 }
   # flat personal-accident (owner-driver) premium
   paRate: 750
   # voluntary deductible chosen -> OD discount fraction

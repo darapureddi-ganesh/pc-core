@@ -98,3 +98,8 @@ export const assignmentLogStore = pgTable("assignment_log_store", {
   createdAt: timestamp("created_at", { withTimezone: true }).notNull().defaultNow(),
   data: jsonb("data").notNull(), // the full AssignmentLogEntry
 });
+
+export const customerStore = pgTable("customer_store", {
+  customerId: uuid("customer_id").primaryKey(),
+  data: jsonb("data").notNull(), // the full Customer
+});

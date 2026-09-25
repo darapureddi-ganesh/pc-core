@@ -46,12 +46,12 @@ export default function ConnectorsPage() {
         <span className="eyebrow">Connector SDK</span>
         <h2>Register a connector</h2>
         <p className="note">
-          Point pc-core at a REST service implementing the policy connector
+          Point OpenCover at a REST service implementing the policy connector
           contract (create/get/save/list/nextPolicyNumber — see{" "}
           <code>@pc-core/adapters</code>'s <code>RemoteHttpPolicyRepository</code>{" "}
           and <code>apps/mock-insurer</code> for a reference implementation) and
           get back a tenant + API key immediately. No restart, no code change on
-          pc-core's side — every service works against the connected company's
+          OpenCover's side — every service works against the connected company's
           own data from that point on.
         </p>
 
@@ -153,7 +153,7 @@ export default function ConnectorsPage() {
         <span className="eyebrow">Bring your own model</span>
         <h2>Open-source LLMs via Ollama</h2>
         <p className="note">
-          pc-core ships no hosted model — the default IDP extractor is
+          OpenCover ships no hosted model — the default IDP extractor is
           deterministic regex. If you have a model running locally through{" "}
           <a href="https://ollama.com" target="_blank" rel="noreferrer">
             Ollama

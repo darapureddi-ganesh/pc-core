@@ -1,8 +1,9 @@
-# pc-core
+# OpenCover
 
 An open-source **P&C insurance core** — motor line. A config-over-code,
 effective-dated policy platform in the spirit of Guidewire / Duck Creek, built
-in the open.
+in the open. (Package scope and directory names are still `@pc-core/*` /
+`pc-core` internally — this is a branding rename, not a package/repo rename.)
 
 A working motor core on an effective-dated spine: **policy lifecycle, rating,
 billing, claims, and documents**, with a Next.js agent portal on top. All logic
@@ -19,7 +20,7 @@ pnpm dev
 ```
 
 Then open **http://localhost:3001**, sign in with the demo password
-(`pc-core-demo`, see "Portal login + tenant switching" below), and click
+(`opencover-demo`, see "Portal login + tenant switching" below), and click
 through the whole lifecycle: enter a vehicle, get a config-driven quote,
 bind, issue — the portal then auto-invoices the premium, lets you pay it
 off, and links straight to the generated **policy schedule** and
@@ -77,6 +78,15 @@ and system-time axes. Pass this and the hard part is done.
 rating algorithm, and evaluates its json-logic rules. Changing the NCB scale,
 adding an add-on or moving a referral threshold is a metadata edit — the test
 proves the numbers trace to the YAML.
+
+The NCB slabs and TP tariff in that YAML aren't placeholders — they're sourced
+from real IRDAI regulation: NCB (20/25/35/45/50%) from the 2002 India Motor
+Tariff, and the annual TP premium (₹2,094 / ₹3,416 / ₹7,897 by cc) plus the
+mandatory **3-year new-vehicle TP lump sum** (₹6,521 / ₹10,640 / ₹24,596) from
+the Gazette of India's *Motor Vehicles (Third Party Insurance Base Premium and
+Liability) Rules, 2022*. Check "New vehicle (first registration)" on the quote
+form to price a brand-new car's mandatory 3-year TP term instead of the annual
+one (`newVehicle` on `QuoteInput` / `POST /quotes`).
 
 ## Where the database comes in
 
@@ -168,7 +178,7 @@ tenant-level authorization (the API already does that per-connector via
 isn't wide open to anyone with the URL.
 
 ```bash
-PORTAL_PASSWORD=your-password       # default: pc-core-demo
+PORTAL_PASSWORD=your-password       # default: opencover-demo
 PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
 ```
 
@@ -188,7 +198,7 @@ contract and get back a tenant + API key immediately, with a one-click
 "switch the portal to this tenant." Pointed at the default URL
 (`http://127.0.0.1:4000`, `apps/mock-insurer`, so run `pnpm platform`), a
 freshly-registered tenant's issued policies come back numbered by
-**that system's own scheme** (`BETA-000001`), not pc-core's — proof the
+**that system's own scheme** (`BETA-000001`), not OpenCover's — proof the
 connector is genuinely routed, not just relabeled.
 
 ## Billing & claims (P5)
@@ -207,6 +217,36 @@ POST /policies/:id/claims     {incidentDate, cause}   # FNOL -> cover as-of inci
 POST /claims/:id/reserve      {amount}
 POST /claims/:id/settle       {amount}
 ```
+
+## Customer identity — the thing that ties a person's history together
+
+Everything above anchors to a *policy*. Nothing anchored to a *person* until
+now: a policy's `insured` field was always just a descriptive name string used
+on documents, with no way to look up "everything about this customer" across
+renewals, multiple vehicles, or every claim on every one of their policies —
+a real gap against the "system of record" a production insurance core needs,
+and the prerequisite for any future customer-facing (as opposed to
+agent-facing) portal.
+
+`CustomerService` (`apps/api/src/service/customer-service.ts`) adds that
+identity: register a customer, link a policy to them at quote time
+(`customerId` on `QuoteInput`/`POST /quotes`), and pull their aggregated
+history back — every policy and every claim across all of them — in one call.
+Like every other domain here, storage is a Connector SDK port
+(`CustomerRepository`), with in-memory and Postgres adapters.
+
+```bash
+POST /customers                   {name, email?, phone?}   # -> {customerId, ...}
+GET  /customers                                             # directory
+GET  /customers/:id                                         # one customer
+GET  /customers/:id/history                                 # {customer, policies, claims}
+```
+
+The portal's **Customers** page (`app/customers/page.tsx`) makes this
+clickable: register a customer, paste their ID into the quote form's
+"Customer ID" field, and issue as many policies against them as you like —
+the history page then shows every one of those policies and every claim
+across them, aggregated live.
 
 ## Claim queue — triage, SLA, assignment
 
@@ -254,7 +294,7 @@ insurer.
 
 ## Bring your own backend (the Connector SDK)
 
-pc-core is a platform, not a silo: a company connects **their own system** and
+OpenCover is a platform, not a silo: a company connects **their own system** and
 every feature above works against **their data**. Services never touch a database
 directly — only the storage contracts in `@pc-core/ports`
 (`PolicyRepository`, `BillingRepository`, `ClaimsRepository`). A connector is
@@ -262,14 +302,14 @@ just an implementation of those interfaces, against a database or over HTTP.
 
 The API is **multi-tenant and self-serve**. Two tenants ship seeded for the demo:
 
-- **`demo`** — pc-core's own in-memory store
+- **`demo`** — OpenCover's own in-memory store
 - **`beta`** — a policy store that lives entirely in a separate process
   (`apps/mock-insurer`) with a *deliberately different internal schema*
   (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
   over HTTP via `RemoteHttpPolicyRepository`
 
 Any third company can **onboard at runtime, no restart, no code change** — point
-pc-core at a REST service implementing the connector contract and get back an
+OpenCover at a REST service implementing the connector contract and get back an
 API key:
 
 ```bash
@@ -285,7 +325,7 @@ per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header
 curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
   -H 'content-type: application/json' -d '{ ...quote... }'
 # Gamma's issued policy is numbered by GAMMA'S OWN system and stored in its own
-# schema — pc-core never sees it. Beta's the same, via the seeded demo tenant.
+# schema — OpenCover never sees it. Beta's the same, via the seeded demo tenant.
 ```
 
 Run the platform demo (API + a stand-in external insurer, printing both demo
@@ -303,10 +343,13 @@ Two pillars of the claims-technology matrix run as pure services behind
   puts any `LlmClient` (Claude, GPT, a local model) behind the same interface —
   strict-JSON prompting, safe degradation on a malformed or failed reply.
 - **Fraud scoring** — `HeuristicFraudScorer` (the default: repeat-claim and
-  early-incident signals) against `FraudScorer`, ready for a real graph/anomaly
-  model behind the same shape.
+  early-incident signals) against `FraudScorer`, or `LlmFraudScorer`, a
+  reference adapter that has any `LlmClient` reason over the same signals and
+  return a score + explanation as strict JSON — falling back to the
+  deterministic heuristic on a malformed reply or a failed model call, so
+  fraud detection never goes silent because a model had a bad day.
 
-pc-core ships no hosted model — these are honest v1s proving the pillars
+OpenCover ships no hosted model — these are honest v1s proving the pillars
 end-to-end and defining the seam a company's own model plugs into per tenant
 (`ClaimsService`'s third constructor argument). FNOL returns `fraudScore`,
 `fraudSignals`, and `extractedFields`.
@@ -315,12 +358,12 @@ end-to-end and defining the seam a company's own model plugs into per tenant
 
 `OllamaLlmClient` (`packages/claims-ai/src/ollama.ts`) is a concrete `LlmClient`
 adapter for a self-hosted [Ollama](https://ollama.com) server — pull any
-open-source model (`ollama pull llama3.1`) and point `LlmDocumentExtractor` at
-it. This is wired all the way through self-serve onboarding: pass
-`ollamaModel` (and optionally `ollamaBaseUrl`) to `POST /connectors/register`,
-or fill in the same fields on the portal's **Connectors** page, and that
-tenant's claim intake runs your model's extraction instead of the default
-regex extractor — no code change.
+open-source model (`ollama pull llama3.1`) and point `LlmDocumentExtractor`
+and/or `LlmFraudScorer` at it. This is wired all the way through self-serve
+onboarding: pass `ollamaModel` (and optionally `ollamaBaseUrl`) to
+`POST /connectors/register`, or fill in the same fields on the portal's
+**Connectors** page, and that tenant's claim intake runs your model's
+extraction AND fraud scoring instead of the defaults — no code change.
 
 ```bash
 curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
@@ -330,6 +373,71 @@ curl -sX POST localhost:3000/connectors/register -H 'content-type: application/j
 Any other model server works the same way — implement `LlmClient`'s single
 method (`complete(prompt): Promise<string>`) against it and pass that instead
 of `OllamaLlmClient` wherever `ClaimsAiProviders` is built.
+
+### Running your own local model, on your own infrastructure
+
+The Ollama flow above is for onboarding an **external** company's connector.
+A company running OpenCover itself — on their own servers, with no internet
+egress required — can instead point their own primary tenant's claims-AI at
+a local model server with three environment variables, no code change:
+
+```bash
+LOCAL_LLM_MODEL=qwen2.5-3b-instruct
+LOCAL_LLM_BASE_URL=http://127.0.0.1:8080   # optional, defaults to this
+LOCAL_LLM_API_KEY=...                      # optional, most local servers ignore it
+```
+
+`OpenAiCompatibleLlmClient` (`packages/claims-ai/src/openai-compatible.ts`)
+speaks the standard OpenAI chat-completions HTTP shape that most local model
+runtimes implement — llama.cpp's `llama-server`, LM Studio, vLLM,
+text-generation-webui, and Ollama's own `/v1/chat/completions` endpoint all
+work against it unmodified. When `LOCAL_LLM_MODEL` is set, the demo tenant's
+`LlmDocumentExtractor` and `LlmFraudScorer` run against it instead of the
+built-in regex extractor and heuristic scorer.
+
+**The rules stay authoritative either way.** This is deliberately additive,
+not a replacement: `LlmFraudScorer` falls back to the deterministic
+`scoreFraudRisk` heuristic on a malformed reply or a failed model call
+(see "Claims-AI" above), and rating, the VAHAN vehicle cross-check, and every
+other rule in the platform run exactly as they do without a model configured.
+No model output is ever trusted without a check against the source claim
+data — the model narrows or explains, it never overrides.
+
+OpenCover ships no model weights or runtime binaries of its own; bring your
+own local server and point these variables at it.
+
+### Vehicle & document verification (VAHAN / DigiLocker)
+
+Two more Connector SDK ports follow the same "swappable provider, no hosted
+service shipped" shape, for fraud-prevention checks at FNOL:
+
+- **`VehicleRegistryPort`** (`packages/ports/src/vehicle-registry.ts`) — looks
+  up a vehicle's authoritative registration record (owner, chassis/engine
+  numbers, fitness/PUCC validity) by registration number, modeled on India's
+  national vehicle registry, VAHAN. `ClaimsService` uses it for an optional,
+  deterministic cross-check (`checkVehicleDetails` in `packages/claims-ai`) at
+  FNOL: if the tenant has a registry configured, the claimant's declared
+  chassis number, engine number, and owner name are compared against the
+  registry record, and any mismatch adds a `VEHICLE_DETAILS_MISMATCH` fraud
+  signal — pure and explainable, no LLM call. Skipped silently if no registry
+  is configured for the tenant, or if it has no record for the plate.
+- **`DocumentVerificationPort`** (`packages/ports/src/document-verification.ts`)
+  — a consent-based issuer-pull flow (`initiateConsent` → `fetchVerifiedDocument`)
+  for pulling a source-verified RC or DL, modeled on DigiLocker.
+
+Both ports ship **mock adapters only** — `MockVehicleRegistry` and
+`MockDigiLocker` (`packages/adapters`) — returning synthetic data for a
+handful of hardcoded records, with no real network calls. Real production use
+requires:
+
+- **VAHAN**: onboarding as an authorized requesting entity with NIC/MoRTH —
+  this is not a public API, and this repo does not implement or plan any real
+  call to `vahan.parivahan.gov.in`.
+- **DigiLocker**: DigiLocker Partner API approval (`api.digilocker.gov.in`).
+
+**Aadhaar/UIDAI integration is explicitly out of scope for this repo** — no
+Aadhaar authentication or e-KYC flow is implemented or planned. Swap in an
+authorized adapter behind either port for production use.
 
 ## Next (from the build plan)
 

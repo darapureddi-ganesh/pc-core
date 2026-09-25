@@ -9,7 +9,7 @@ export default function LoginPage() {
   return (
     <main className="wrap" style={{ gridTemplateColumns: "1fr", maxWidth: 420 }}>
       <form className="card" action={formAction}>
-        <span className="eyebrow">pc-core</span>
+        <span className="eyebrow">OpenCover</span>
         <h2>Agent portal sign-in</h2>
 
         <div className="field">
