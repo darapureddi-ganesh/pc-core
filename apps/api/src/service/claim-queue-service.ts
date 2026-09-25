@@ -6,6 +6,7 @@ import {
   type CompanyRules,
   type HandlerScore,
 } from "@pc-core/claims-queue";
+import type { TriageAdvisor } from "@pc-core/claims-ai";
 import type {
   AssignmentLogRepository,
   Claim,
@@ -60,6 +61,7 @@ export class ClaimQueueService {
     private readonly handlers: HandlersRepository,
     private readonly assignmentLog: AssignmentLogRepository,
     private readonly rules: CompanyRules = DEFAULT_COMPANY_RULES,
+    private readonly triageAdvisor?: TriageAdvisor,
   ) {}
 
   async classify(cmd: {
@@ -83,6 +85,25 @@ export class ClaimQueueService {
     claim.slaDeadline = sla.slaDeadline;
     claim.slaRiskScore = sla.slaRiskScore;
     claim.slaBreached = sla.slaBreached;
+
+    // Optional, advisory-only: never changes claim.priority/claimType above,
+    // which the deterministic rules pipeline already set. Silently skipped
+    // if no advisor is configured, or it has no opinion (see LlmTriageAdvisor's
+    // safe-degrade behavior) — a triage hint is a bonus, never a dependency.
+    if (this.triageAdvisor) {
+      const advice = await this.triageAdvisor.advise({
+        description: claim.cause,
+        amount: claim.sumInsured,
+      });
+      if (advice) {
+        claim.aiTriageHint = {
+          ...advice,
+          agreesWithRules:
+            advice.suggestedPriority === result.priority &&
+            advice.suggestedClaimType === result.claimType,
+        };
+      }
+    }
 
     await this.claims.save(claim);
     return {

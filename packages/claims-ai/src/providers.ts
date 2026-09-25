@@ -15,6 +15,32 @@ export interface FraudScorer {
   score(input: FraudInput): Promise<FraudResult>;
 }
 
+export interface TriageAdvisorInput {
+  /** FNOL free-text description (the claim's `cause`, plus any raw intake note) */
+  description: string;
+  /** claim amount, typically the sum insured at incident date */
+  amount: number;
+}
+
+export interface TriageAdvisorResult {
+  suggestedPriority: "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
+  suggestedClaimType: "MOTOR_ACCIDENT" | "MOTOR_THEFT" | "MOTOR_OTHER";
+  rationale: string;
+}
+
+/**
+ * The claim-queue advisory seam: purely additive, never a decision-maker.
+ * Unlike FraudScorer/DocumentExtractor (which always run, model or no model),
+ * a TriageAdvisor's suggestion is ADVISORY ONLY — @pc-core/claims-queue's
+ * deterministic classifyClaim() always sets the real priority/claimType, and
+ * the advisor's opinion is stored alongside it purely for a human reviewer to
+ * compare, never applied automatically. Returning null (no opinion) is always
+ * a valid, silently-skipped outcome.
+ */
+export interface TriageAdvisor {
+  advise(input: TriageAdvisorInput): Promise<TriageAdvisorResult | null>;
+}
+
 /** Default IDP: the deterministic regex extractor, wrapped as a provider. */
 export class RegexDocumentExtractor implements DocumentExtractor {
   async extract(rawText: string): Promise<ExtractedFields> {
@@ -99,6 +125,64 @@ export class LlmFraudScorer implements FraudScorer {
       return scoreFraudRisk(input);
     }
     return parseFraudResult(reply) ?? scoreFraudRisk(input);
+  }
+}
+
+const VALID_PRIORITIES = new Set(["LOW", "MEDIUM", "HIGH", "CRITICAL"]);
+const VALID_CLAIM_TYPES = new Set(["MOTOR_ACCIDENT", "MOTOR_THEFT", "MOTOR_OTHER"]);
+
+/**
+ * Reference adapter showing how to put a real LLM behind `TriageAdvisor`.
+ * Asks for strict JSON constrained to the same enum values the deterministic
+ * classifier uses, and rejects anything else outright — a model can suggest
+ * "HIGH", never invent a priority level that doesn't exist in the rules
+ * pipeline. Degrades to no opinion (`null`) on a malformed reply or a failed
+ * model call; a triage hint that isn't there is always safe, an invented one
+ * wouldn't be. OpenCover itself ships no hosted model.
+ */
+export class LlmTriageAdvisor implements TriageAdvisor {
+  constructor(private readonly llm: LlmClient) {}
+
+  async advise(input: TriageAdvisorInput): Promise<TriageAdvisorResult | null> {
+    const prompt = [
+      "You are a P&C motor-insurance claims triage assistant.",
+      "Suggest a priority and claim type for this newly-filed claim.",
+      "Return ONLY strict JSON of the form:",
+      '{"suggestedPriority":"LOW"|"MEDIUM"|"HIGH"|"CRITICAL","suggestedClaimType":"MOTOR_ACCIDENT"|"MOTOR_THEFT"|"MOTOR_OTHER","rationale":string}',
+      "Claim:",
+      `- description: ${input.description}`,
+      `- claim amount: ${input.amount}`,
+    ].join("\n");
+
+    let reply: string;
+    try {
+      reply = await this.llm.complete(prompt);
+    } catch {
+      return null;
+    }
+    return parseTriageResult(reply);
+  }
+}
+
+function parseTriageResult(reply: string): TriageAdvisorResult | null {
+  try {
+    const json = JSON.parse(isolateJson(reply)) as Partial<TriageAdvisorResult>;
+    if (
+      typeof json.suggestedPriority !== "string" ||
+      !VALID_PRIORITIES.has(json.suggestedPriority) ||
+      typeof json.suggestedClaimType !== "string" ||
+      !VALID_CLAIM_TYPES.has(json.suggestedClaimType) ||
+      typeof json.rationale !== "string"
+    ) {
+      return null;
+    }
+    return {
+      suggestedPriority: json.suggestedPriority as TriageAdvisorResult["suggestedPriority"],
+      suggestedClaimType: json.suggestedClaimType as TriageAdvisorResult["suggestedClaimType"],
+      rationale: json.rationale,
+    };
+  } catch {
+    return null;
   }
 }
 

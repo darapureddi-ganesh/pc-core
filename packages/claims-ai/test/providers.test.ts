@@ -4,6 +4,7 @@ import {
   HeuristicFraudScorer,
   LlmDocumentExtractor,
   LlmFraudScorer,
+  LlmTriageAdvisor,
   type LlmClient,
 } from "../src/index.js";
 
@@ -118,5 +119,65 @@ describe("LlmFraudScorer — the real-model seam", () => {
       daysSincePolicyStart: 100,
     });
     expect(result.score).toBeCloseTo(0.5, 5); // same as HeuristicFraudScorer
+  });
+});
+
+describe("LlmTriageAdvisor — the advisory-only real-model seam", () => {
+  it("parses a strict-JSON suggestion from the model", async () => {
+    const llm = stubLlm(
+      '{"suggestedPriority":"HIGH","suggestedClaimType":"MOTOR_ACCIDENT","rationale":"mentions injury"}',
+    );
+    const advice = await new LlmTriageAdvisor(llm).advise({
+      description: "collision, driver injured",
+      amount: 150_000,
+    });
+    expect(advice).toEqual({
+      suggestedPriority: "HIGH",
+      suggestedClaimType: "MOTOR_ACCIDENT",
+      rationale: "mentions injury",
+    });
+  });
+
+  it("tolerates a model that wraps JSON in prose / code fences", async () => {
+    const llm = stubLlm(
+      'Sure:\n```json\n{"suggestedPriority":"LOW","suggestedClaimType":"MOTOR_OTHER","rationale":"minor"}\n```',
+    );
+    const advice = await new LlmTriageAdvisor(llm).advise({
+      description: "scratch",
+      amount: 5_000,
+    });
+    expect(advice?.suggestedPriority).toBe("LOW");
+  });
+
+  it("rejects a suggestion outside the rules pipeline's own enum values", async () => {
+    const llm = stubLlm(
+      '{"suggestedPriority":"URGENT","suggestedClaimType":"MOTOR_ACCIDENT","rationale":"x"}',
+    );
+    const advice = await new LlmTriageAdvisor(llm).advise({
+      description: "collision",
+      amount: 10_000,
+    });
+    expect(advice).toBeNull();
+  });
+
+  it("degrades to no opinion on a malformed reply", async () => {
+    const advice = await new LlmTriageAdvisor(stubLlm("not JSON")).advise({
+      description: "collision",
+      amount: 10_000,
+    });
+    expect(advice).toBeNull();
+  });
+
+  it("degrades to no opinion when the LLM call throws", async () => {
+    const throwing: LlmClient = {
+      complete: async () => {
+        throw new Error("provider down");
+      },
+    };
+    const advice = await new LlmTriageAdvisor(throwing).advise({
+      description: "collision",
+      amount: 10_000,
+    });
+    expect(advice).toBeNull();
   });
 });
