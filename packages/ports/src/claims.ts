@@ -34,8 +34,8 @@ export interface Claim {
    * Never applied automatically; absent when no TriageAdvisor is configured
    * or it had no opinion (see ClaimQueueService.classify). */
   aiTriageHint?: {
-    suggestedPriority: string;
-    suggestedClaimType: string;
+    suggestedPriority: Priority;
+    suggestedClaimType: ClaimType;
     rationale: string;
     /** whether the model's suggestion matches the rules pipeline's own priority + claimType */
     agreesWithRules: boolean;

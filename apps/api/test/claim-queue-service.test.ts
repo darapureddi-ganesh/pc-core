@@ -236,6 +236,55 @@ describe("ClaimQueueService — advisory AI triage hint", () => {
     const { claim } = await queue.classify({ claimId }); // default beforeEach queue, no advisor
     expect(claim.aiTriageHint).toBeUndefined();
   });
+
+  it("clears a stale hint on reclassification if the advisor now has no opinion", async () => {
+    let opinion: TriageAdvisorResult | null = {
+      suggestedPriority: "LOW",
+      suggestedClaimType: "MOTOR_OTHER",
+      rationale: "first pass",
+    };
+    const flakyAdvisor: TriageAdvisor = { advise: async () => opinion };
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      flakyAdvisor,
+    );
+    const claimId = await issuedClaim("collision on highway");
+
+    const first = await advised.classify({ claimId });
+    expect(first.claim.aiTriageHint).toBeDefined();
+
+    // The advisor now has no opinion (e.g. the model server went down) —
+    // reclassifying must not leave the previous run's hint sitting there.
+    opinion = null;
+    const second = await advised.classify({ claimId });
+    expect(second.claim.aiTriageHint).toBeUndefined();
+  });
+
+  it("clears a stale hint on reclassification if no advisor is configured this time", async () => {
+    const claimId = await issuedClaim("collision on highway");
+
+    const advised = new ClaimQueueService(
+      claimsRepo,
+      new InMemoryHandlersRepository(handlers.map((h) => ({ ...h }))),
+      new InMemoryAssignmentLogRepository(),
+      undefined,
+      stubAdvisor({
+        suggestedPriority: "LOW",
+        suggestedClaimType: "MOTOR_OTHER",
+        rationale: "first pass",
+      }),
+    );
+    const first = await advised.classify({ claimId });
+    expect(first.claim.aiTriageHint).toBeDefined();
+
+    // Reclassify through a queue with no advisor at all (e.g. LOCAL_LLM_MODEL
+    // unset after a restart) — the persisted claim must not still show it.
+    const second = await queue.classify({ claimId });
+    expect(second.claim.aiTriageHint).toBeUndefined();
+  });
 });
 
 describe("ClaimQueueService — queue status", () => {

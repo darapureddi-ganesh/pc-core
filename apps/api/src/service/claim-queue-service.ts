@@ -87,9 +87,12 @@ export class ClaimQueueService {
     claim.slaBreached = sla.slaBreached;
 
     // Optional, advisory-only: never changes claim.priority/claimType above,
-    // which the deterministic rules pipeline already set. Silently skipped
-    // if no advisor is configured, or it has no opinion (see LlmTriageAdvisor's
-    // safe-degrade behavior) — a triage hint is a bonus, never a dependency.
+    // which the deterministic rules pipeline already set. Cleared up front so
+    // a re-classification (no advisor configured this time, or the advisor
+    // now has no opinion) doesn't leave a stale hint from an earlier run —
+    // a triage hint is a bonus, never a dependency, and "absent" must mean
+    // absent even on reclassification.
+    claim.aiTriageHint = undefined;
     if (this.triageAdvisor) {
       const advice = await this.triageAdvisor.advise({
         description: claim.cause,
