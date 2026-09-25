@@ -88,6 +88,7 @@ const policyFieldMappingSchema = z.object({
     insuredName: z.string().optional(),
     cancelledEffectiveFrom: z.string().optional(),
     customerId: z.string().optional(),
+    renewedFromPolicyId: z.string().optional(),
   }),
   statusValues: z.record(z.enum(["QUOTED", "BOUND", "ISSUED", "CANCELLED"])),
   baseIsJsonEncoded: z.boolean().optional(),
@@ -313,6 +314,15 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
       return snapshot;
     }
     return policy.get(policyId);
+  });
+
+  // Renewal: quotes a fresh policy carrying the risk forward one year, with
+  // NCB stepped up (or reset, if a claim was filed) — see RenewalService. It
+  // reuses the ordinary quote -> bind -> issue lifecycle above; this route
+  // only produces the renewal quote and links it back to the expiring policy.
+  app.post("/policies/:id/renew", async (req, reply) => {
+    const result = await services(req).renewals.quoteRenewal(id(req));
+    return reply.status(201).send(result);
   });
 
   // ── billing ──────────────────────────────────────────────────────────────

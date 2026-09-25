@@ -31,6 +31,8 @@ export interface PolicyEnvelopeMapping {
     cancelledEffectiveFrom?: string;
     /** links the mapped policy to a Customer identity (see PolicyAggregate.customerId) */
     customerId?: string;
+    /** the expiring policy this one renews (see PolicyAggregate.renewedFromPolicyId) */
+    renewedFromPolicyId?: string;
   };
   /** source status value (as it literally appears in the record) -> PC Core's PolicyStatus */
   statusValues: Record<string, "QUOTED" | "BOUND" | "ISSUED" | "CANCELLED">;

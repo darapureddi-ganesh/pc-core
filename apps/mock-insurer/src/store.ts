@@ -20,6 +20,8 @@ export interface BetaRecord {
   loggedAt: string;
   txns: Array<{ kind: "ENDORSE"; effDt: string; loggedAt: string; deltaBlob: string }>;
   cancelDt?: string;
+  custId?: string;
+  renewedFromId?: string;
 }
 
 const STATUS_TO_BETA: Record<PolicyStatus, BetaRecord["state"]> = {
@@ -55,6 +57,8 @@ export function toBeta(policy: PolicyAggregate): BetaRecord {
       deltaBlob: JSON.stringify(t.change),
     })),
     cancelDt: policy.cancelledEffectiveFrom,
+    custId: policy.customerId,
+    renewedFromId: policy.renewedFromPolicyId,
   };
 }
 
@@ -77,5 +81,7 @@ export function toContract(r: BetaRecord): PolicyAggregate {
     })),
     cancelledEffectiveFrom: r.cancelDt,
     insured: r.insuredNm ? { name: r.insuredNm } : undefined,
+    customerId: r.custId,
+    renewedFromPolicyId: r.renewedFromId,
   };
 }

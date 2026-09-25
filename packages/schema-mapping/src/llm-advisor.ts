@@ -13,7 +13,12 @@ const REQUIRED_FIELD_KEYS = [
   "transactions",
 ] as const;
 
-const OPTIONAL_FIELD_KEYS = ["insuredName", "cancelledEffectiveFrom", "customerId"] as const;
+const OPTIONAL_FIELD_KEYS = [
+  "insuredName",
+  "cancelledEffectiveFrom",
+  "customerId",
+  "renewedFromPolicyId",
+] as const;
 
 const VALID_STATUSES = new Set(["QUOTED", "BOUND", "ISSUED", "CANCELLED"]);
 
@@ -44,7 +49,8 @@ export class LlmPolicyMappingAdvisor {
       "Target envelope fields (dot-paths into the SOURCE record, as strings):",
       "  policyId, policyNumber, productCode, productVersion, status,",
       "  termFrom, termTo, base, baseRecordedAt, transactions,",
-      "  insuredName (optional), cancelledEffectiveFrom (optional), customerId (optional)",
+      "  insuredName (optional), cancelledEffectiveFrom (optional), customerId (optional),",
+      "  renewedFromPolicyId (optional)",
       "",
       "Return ONLY strict JSON of the form:",
       "{",
@@ -52,7 +58,8 @@ export class LlmPolicyMappingAdvisor {
       '              "productVersion": string, "status": string, "termFrom": string,',
       '              "termTo": string, "base": string, "baseRecordedAt": string,',
       '              "transactions": string, "insuredName"?: string,',
-      '              "cancelledEffectiveFrom"?: string, "customerId"?: string },',
+      '              "cancelledEffectiveFrom"?: string, "customerId"?: string,',
+      '              "renewedFromPolicyId"?: string },',
       '  "statusValues": { "<source status value>": "QUOTED"|"BOUND"|"ISSUED"|"CANCELLED", ... },',
       '  "baseIsJsonEncoded": boolean,',
       '  "transactionFields": { "txnType": string, "effectiveFrom": string, "recordedAt": string, "change": string },',

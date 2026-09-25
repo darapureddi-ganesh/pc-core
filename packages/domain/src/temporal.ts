@@ -6,6 +6,22 @@ export function contains(range: DateRange, date: string): boolean {
 }
 
 /**
+ * One calendar year after a YYYY-MM-DD date — plain string math for the
+ * common case, falling back to `Date.UTC` (which normalizes month/day
+ * overflow itself) only for Feb 29, since next year isn't necessarily a
+ * leap year. A Feb-29 renewal anniversary lands on Mar 1 the following year
+ * — a deliberate, common convention, not a bug to special-case further.
+ */
+export function addOneYear(date: string): string {
+  const [y, m, d] = date.split("-").map(Number) as [number, number, number];
+  if (m === 2 && d === 29) {
+    const next = new Date(Date.UTC(y + 1, m - 1, d));
+    return next.toISOString().slice(0, 10);
+  }
+  return `${y + 1}-${String(m).padStart(2, "0")}-${String(d).padStart(2, "0")}`;
+}
+
+/**
  * Fold an issue + its transactions into a non-overlapping timeline of slices.
  *
  * Two things make this correct rather than naive:

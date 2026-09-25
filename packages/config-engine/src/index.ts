@@ -17,6 +17,7 @@ export type { LoadedProduct } from "./loader.js";
 export { runRating } from "./rating.js";
 export { runRules } from "./rules.js";
 export type { RuleOutcome } from "./rules.js";
+export { nextNcbTier } from "./renewal.js";
 
 /**
  * Quote a risk against a product: price it, then run the rules. One pass, no

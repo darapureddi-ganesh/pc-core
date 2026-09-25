@@ -74,6 +74,7 @@ describe("LlmPolicyMappingAdvisor", () => {
         { insuredName: 42 },
         { cancelledEffectiveFrom: {} },
         { customerId: false },
+        { renewedFromPolicyId: 7 },
       ].map(async (badOptional) => {
         const bad = JSON.parse(validMappingJson);
         bad.fields = { ...bad.fields, ...badOptional };
