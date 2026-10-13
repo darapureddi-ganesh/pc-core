@@ -14,6 +14,7 @@ import {
   PostgresCustomerRepository,
   PostgresHandlersRepository,
   PostgresPolicyRepository,
+  PostgresTenantRegistryStore,
   RemoteHttpPolicyRepository,
 } from "@pc-core/adapters";
 import { createDb, type Db } from "@pc-core/db/client";
@@ -28,7 +29,14 @@ import {
   type TriageAdvisor,
 } from "@pc-core/claims-ai";
 import type { PolicyEnvelopeMapping } from "@pc-core/schema-mapping";
-import type { Connector, Handler, TenantInfo } from "@pc-core/ports";
+import type {
+  Connector,
+  Handler,
+  RegisteredConnectorRecord,
+  TenantInfo,
+  TenantRegistryStore,
+} from "@pc-core/ports";
+import { policyFieldMappingSchema } from "./schemas.js";
 import type { ClaimsAiProviders } from "./service/claims-service.js";
 import { PolicyService } from "./service/policy-service.js";
 import { BillingService } from "./service/billing-service.js";
@@ -156,6 +164,30 @@ function newApiKey(): string {
   return `pk_${randomBytes(20).toString("hex")}`;
 }
 
+/** Builds the claimsAi/triageAdvisor/policy-repo trio a self-serve
+ * registration needs, from its raw inputs — shared by registerConnector
+ * (fresh registration) and hydrate() (rebuilding from durable storage), so
+ * the two can never drift into building a tenant differently. */
+function buildConnectorTenant(
+  policyBaseUrl: string,
+  ollama: OllamaClientOptions | undefined,
+  policyFieldMapping: PolicyEnvelopeMapping | undefined,
+): { connector: Connector; claimsAi?: ClaimsAiProviders; triageAdvisor?: TriageAdvisor } {
+  const claimsAi: ClaimsAiProviders | undefined = ollama
+    ? {
+        extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)),
+        fraudScorer: new LlmFraudScorer(new OllamaLlmClient(ollama)),
+      }
+    : undefined;
+  const triageAdvisor = ollama
+    ? new LlmTriageAdvisor(new OllamaLlmClient(ollama))
+    : undefined;
+  const policyRepo = policyFieldMapping
+    ? new MappedRemoteHttpPolicyRepository(policyBaseUrl, policyFieldMapping)
+    : new RemoteHttpPolicyRepository(policyBaseUrl);
+  return { connector: { policy: policyRepo }, claimsAi, triageAdvisor };
+}
+
 /**
  * Registers one connector per connected company, keyed by both tenant ID and
  * API key, and resolves the matching service bundle per request. Every
@@ -163,10 +195,18 @@ function newApiKey(): string {
  * data actually lives) differs. This is the platform's tenant directory: a
  * company calls `registerConnector` once (see POST /connectors/register) and
  * gets back the key their system authenticates every subsequent call with.
+ *
+ * An optional `TenantRegistryStore` (see @pc-core/ports) makes self-serve
+ * registrations durable — without one, a registered connector only lives in
+ * memory and a restart silently forgets it. Seeded platform tenants ("demo",
+ * "beta") are never written to the store; they're rebuilt from code/env
+ * every boot regardless.
  */
 export class TenantRegistry {
   private readonly byTenantId = new Map<string, RegisteredTenant>();
   private readonly byApiKey = new Map<string, RegisteredTenant>();
+
+  constructor(private readonly store?: TenantRegistryStore) {}
 
   /** Register a tenant with an explicit ID and key — used to seed well-known demo tenants. */
   register(
@@ -205,36 +245,83 @@ export class TenantRegistry {
    * than PolicyAggregate directly — MappedRemoteHttpPolicyRepository applies
    * it on every real call instead of the company writing translation code
    * by hand. No mapping reaches here without a person having reviewed it.
+   *
+   * If a TenantRegistryStore is configured, the registration is persisted
+   * before this resolves — so a crash right after registering doesn't lose
+   * the tenant the caller just got an API key for.
    */
-  registerConnector(
+  async registerConnector(
     name: string,
     policyBaseUrl: string,
     ollama?: OllamaClientOptions,
     policyFieldMapping?: PolicyEnvelopeMapping,
-  ): TenantInfo & { apiKey: string } {
+  ): Promise<TenantInfo & { apiKey: string }> {
     const info: TenantInfo = { tenantId: newTenantId(name), name };
     const apiKey = newApiKey();
-    const claimsAi: ClaimsAiProviders | undefined = ollama
-      ? {
-          extractor: new LlmDocumentExtractor(new OllamaLlmClient(ollama)),
-          fraudScorer: new LlmFraudScorer(new OllamaLlmClient(ollama)),
-        }
-      : undefined;
-    const triageAdvisor = ollama
-      ? new LlmTriageAdvisor(new OllamaLlmClient(ollama))
-      : undefined;
-    const policyRepo = policyFieldMapping
-      ? new MappedRemoteHttpPolicyRepository(policyBaseUrl, policyFieldMapping)
-      : new RemoteHttpPolicyRepository(policyBaseUrl);
-    this.register(
-      info,
-      { policy: policyRepo },
-      apiKey,
-      claimsAi,
-      undefined,
-      triageAdvisor,
+    const { connector, claimsAi, triageAdvisor } = buildConnectorTenant(
+      policyBaseUrl,
+      ollama,
+      policyFieldMapping,
     );
+    this.register(info, connector, apiKey, claimsAi, undefined, triageAdvisor);
+
+    const record: RegisteredConnectorRecord = {
+      tenantId: info.tenantId,
+      apiKey,
+      name,
+      policyBaseUrl,
+      ollamaModel: ollama?.model,
+      ollamaBaseUrl: ollama?.baseUrl,
+      policyFieldMapping,
+      registeredAt: new Date().toISOString(),
+    };
+    await this.store?.save(record);
+
     return { ...info, apiKey };
+  }
+
+  /**
+   * Rebuilds every self-serve registration from durable storage — call once
+   * on boot, after seeding the platform's own tenants, so a restart doesn't
+   * forget a pilot insurer's onboarding. A no-op if no store is configured.
+   * Returns how many tenants were restored. A persisted mapping is
+   * re-validated against the same schema the HTTP layer uses
+   * (`policyFieldMappingSchema`) before being trusted — a row that somehow
+   * doesn't fit is skipped (logged), not allowed to crash the boot.
+   */
+  async hydrate(): Promise<number> {
+    if (!this.store) return 0;
+    const records = await this.store.list();
+    let restored = 0;
+    for (const record of records) {
+      const parsedMapping = record.policyFieldMapping
+        ? policyFieldMappingSchema.safeParse(record.policyFieldMapping)
+        : undefined;
+      if (parsedMapping && !parsedMapping.success) {
+        console.error(
+          `skipping tenant "${record.tenantId}" on hydrate: stored policyFieldMapping no longer validates`,
+        );
+        continue;
+      }
+      const ollama = record.ollamaModel
+        ? { model: record.ollamaModel, baseUrl: record.ollamaBaseUrl }
+        : undefined;
+      const { connector, claimsAi, triageAdvisor } = buildConnectorTenant(
+        record.policyBaseUrl,
+        ollama,
+        parsedMapping?.data as PolicyEnvelopeMapping | undefined,
+      );
+      this.register(
+        { tenantId: record.tenantId, name: record.name },
+        connector,
+        record.apiKey,
+        claimsAi,
+        undefined,
+        triageAdvisor,
+      );
+      restored += 1;
+    }
+    return restored;
   }
 
   resolve(tenantId: string): TenantServices | undefined {
@@ -286,7 +373,14 @@ export async function buildDemoRegistry(
   databaseUrl = process.env.DATABASE_URL,
   localLlm = localLlmOptionsFromEnv(),
 ): Promise<TenantRegistry> {
-  const registry = new TenantRegistry();
+  // One connection, reused for both the demo tenant's own Postgres connector
+  // (if DATABASE_URL is set) and the tenant registry's durable store — so a
+  // self-serve registration survives a restart instead of only living in
+  // memory. Without DATABASE_URL, registerConnector still works, it just
+  // isn't persisted (same as before this existed).
+  const db = databaseUrl ? createDb(databaseUrl).db : undefined;
+  const tenantStore = db ? new PostgresTenantRegistryStore(db) : undefined;
+  const registry = new TenantRegistry(tenantStore);
 
   // Demo tenant gets a VAHAN-style vehicle registry wired in, so filing a
   // claim with mismatched vehicle details produces a live
@@ -310,8 +404,7 @@ export async function buildDemoRegistry(
     ? new LlmTriageAdvisor(new OpenAiCompatibleLlmClient(localLlm))
     : undefined;
 
-  if (databaseUrl) {
-    const { db } = createDb(databaseUrl);
+  if (db) {
     await seedPostgresHandlers(db, DEMO_HANDLERS);
     registry.register(
       { tenantId: "demo", name: "PC Core demo (Postgres)" },
@@ -337,6 +430,11 @@ export async function buildDemoRegistry(
     { policy: new RemoteHttpPolicyRepository(betaBaseUrl) },
     BETA_API_KEY,
   );
+
+  const restored = await registry.hydrate();
+  if (restored > 0) {
+    console.log(`  restored ${restored} self-serve connector(s) from storage`);
+  }
 
   return registry;
 }

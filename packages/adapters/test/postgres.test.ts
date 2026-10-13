@@ -1,21 +1,31 @@
 import { describe, it, expect, beforeEach, afterAll } from "vitest";
 import { createDb } from "@pc-core/db/client";
-import type { Claim, Customer, Handler, PolicyAggregate } from "@pc-core/ports";
+import type {
+  Claim,
+  Customer,
+  Handler,
+  PolicyAggregate,
+  RegisteredConnectorRecord,
+} from "@pc-core/ports";
 import {
   PostgresAssignmentLogRepository,
   PostgresClaimsRepository,
   PostgresCustomerRepository,
   PostgresHandlersRepository,
   PostgresPolicyRepository,
+  PostgresTenantRegistryStore,
 } from "../src/postgres.js";
 
 /**
- * Runs against a real Postgres with 0002_jsonb_adapters.sql applied. Skipped
- * unless TEST_DATABASE_URL is set — this is an integration test, not part of
- * the default `pnpm test` run, since most contributors won't have Postgres up.
+ * Runs against a real Postgres with 0002_jsonb_adapters.sql, 0003_customer_store.sql,
+ * and 0004_tenant_registry.sql applied. Skipped unless TEST_DATABASE_URL is
+ * set — this is an integration test, not part of the default `pnpm test`
+ * run, since most contributors won't have Postgres up.
  *
  *   createdb pc_core_test
  *   psql pc_core_test -f packages/db/migrations/0002_jsonb_adapters.sql
+ *   psql pc_core_test -f packages/db/migrations/0003_customer_store.sql
+ *   psql pc_core_test -f packages/db/migrations/0004_tenant_registry.sql
  *   TEST_DATABASE_URL=postgres://localhost/pc_core_test pnpm test
  */
 const connectionString = process.env.TEST_DATABASE_URL;
@@ -25,7 +35,7 @@ describe.skipIf(!connectionString)("Postgres adapters — against a real databas
 
   beforeEach(async () => {
     await pool.query(
-      "truncate policy_store, billing_store, claim_store, handler_store, assignment_log_store, customer_store",
+      "truncate policy_store, billing_store, claim_store, handler_store, assignment_log_store, customer_store, tenant_registry_store",
     );
   });
 
@@ -142,5 +152,26 @@ describe.skipIf(!connectionString)("Postgres adapters — against a real databas
     expect((await repo.get(customer.customerId))?.phone).toBe("+91-9999999999");
 
     expect(await repo.list()).toHaveLength(1);
+  });
+
+  it("round-trips a self-serve connector registration, including an upsert on the same tenantId", async () => {
+    const store = new PostgresTenantRegistryStore(db);
+    const record: RegisteredConnectorRecord = {
+      tenantId: "gamma-insurance-062a10",
+      apiKey: "pk_abc123",
+      name: "Gamma Insurance",
+      policyBaseUrl: "https://gamma.example.com",
+      ollamaModel: "llama3.1",
+      registeredAt: "2026-01-01T00:00:00.000Z",
+    };
+    await store.save(record);
+    expect(await store.list()).toEqual([record]);
+
+    // Re-saving the same tenantId with a new API key upserts, not duplicates.
+    const rotated = { ...record, apiKey: "pk_rotated" };
+    await store.save(rotated);
+    const all = await store.list();
+    expect(all).toHaveLength(1);
+    expect(all[0]?.apiKey).toBe("pk_rotated");
   });
 });

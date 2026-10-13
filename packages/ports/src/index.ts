@@ -22,6 +22,11 @@ export type {
 
 export type { Connector, TenantInfo } from "./tenant.js";
 
+export type {
+  RegisteredConnectorRecord,
+  TenantRegistryStore,
+} from "./tenant-registry.js";
+
 export type { Customer, CustomerRepository } from "./customer.js";
 
 export type { VehicleRecord, VehicleRegistryPort } from "./vehicle-registry.js";

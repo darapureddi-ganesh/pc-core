@@ -100,10 +100,23 @@ one (`newVehicle` on `QuoteInput` / `POST /quotes`).
   against real Postgres instead — useful for a pilot on infra a company
   actually controls (e.g. India's data-localization requirement), without
   waiting on the normalized model above.
+- `migrations/0003_customer_store.sql` / `migrations/0004_tenant_registry.sql`
+  — the customer identity store, and `tenant_registry_store`: **the thing
+  that makes a pilot insurer's onboarding survive a restart.** Without
+  `DATABASE_URL`, a self-serve registration (`POST /connectors/register`)
+  only lives in `TenantRegistry`'s in-memory map — a redeploy silently
+  forgets every company that onboarded. With it, `TenantRegistry.hydrate()`
+  rebuilds every registration (including its Ollama config and any
+  confirmed `policyFieldMapping`) from Postgres on boot, before the server
+  starts listening. Verified live: register a connector, `kill -9` the API
+  process, restart it — same tenant ID, same API key, same connector config,
+  working immediately.
 
 ```bash
 createdb pc_core_dev
 psql pc_core_dev -f packages/db/migrations/0002_jsonb_adapters.sql
+psql pc_core_dev -f packages/db/migrations/0003_customer_store.sql
+psql pc_core_dev -f packages/db/migrations/0004_tenant_registry.sql
 DATABASE_URL=postgres://localhost/pc_core_dev pnpm --filter @pc-core/api start
 ```
 
@@ -528,6 +541,4 @@ authorized adapter behind either port for production use.
 - **infra** — materialize the transaction-log domain model into the normalized
   `policy_period` rows so the Postgres GiST exclusion constraint is actually
   enforced; a `@pc-core/contracts` types package shared by api + web; wire
-  claim settlements into the billing ledger; persist the tenant registry
-  itself (currently in-memory, so registered connectors don't survive a
-  restart)
+  claim settlements into the billing ledger

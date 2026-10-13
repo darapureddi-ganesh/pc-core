@@ -13,6 +13,8 @@ import type {
   HandlersRepository,
   PolicyAggregate,
   PolicyRepository,
+  RegisteredConnectorRecord,
+  TenantRegistryStore,
 } from "@pc-core/ports";
 
 /**
@@ -195,5 +197,30 @@ export class PostgresCustomerRepository implements CustomerRepository {
   async list(): Promise<Customer[]> {
     const rows = await this.db.select().from(schema.customerStore);
     return rows.map((r) => r.data as Customer);
+  }
+}
+
+/**
+ * Durable storage for self-serve connector registrations — the piece that
+ * makes a pilot insurer's onboarding survive an API restart. Without this,
+ * TenantRegistry only remembers registered connectors in memory, and a
+ * redeploy silently drops every one of them.
+ */
+export class PostgresTenantRegistryStore implements TenantRegistryStore {
+  constructor(private readonly db: Db) {}
+
+  async save(record: RegisteredConnectorRecord): Promise<void> {
+    await this.db
+      .insert(schema.tenantRegistryStore)
+      .values({ tenantId: record.tenantId, apiKey: record.apiKey, data: record })
+      .onConflictDoUpdate({
+        target: schema.tenantRegistryStore.tenantId,
+        set: { apiKey: record.apiKey, data: record },
+      });
+  }
+
+  async list(): Promise<RegisteredConnectorRecord[]> {
+    const rows = await this.db.select().from(schema.tenantRegistryStore);
+    return rows.map((r) => r.data as RegisteredConnectorRecord);
   }
 }
