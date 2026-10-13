@@ -11,6 +11,8 @@ import type {
   HandlersRepository,
   PolicyAggregate,
   PolicyRepository,
+  RegisteredConnectorRecord,
+  TenantRegistryStore,
 } from "@pc-core/ports";
 
 /**
@@ -128,5 +130,19 @@ export class InMemoryCustomerRepository implements CustomerRepository {
   }
   async list(): Promise<Customer[]> {
     return [...this.store.values()].map((c) => structuredClone(c));
+  }
+}
+
+/** The default: no persistence at all — fine for a local demo, but a
+ * registered connector won't survive a restart. See PostgresTenantRegistryStore
+ * (`@pc-core/adapters`) for the durable alternative a pilot should use. */
+export class InMemoryTenantRegistryStore implements TenantRegistryStore {
+  private readonly store = new Map<string, RegisteredConnectorRecord>();
+
+  async save(record: RegisteredConnectorRecord): Promise<void> {
+    this.store.set(record.tenantId, structuredClone(record));
+  }
+  async list(): Promise<RegisteredConnectorRecord[]> {
+    return [...this.store.values()].map((r) => structuredClone(r));
   }
 }

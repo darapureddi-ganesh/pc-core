@@ -103,3 +103,10 @@ export const customerStore = pgTable("customer_store", {
   customerId: uuid("customer_id").primaryKey(),
   data: jsonb("data").notNull(), // the full Customer
 });
+
+export const tenantRegistryStore = pgTable("tenant_registry_store", {
+  // not a uuid — generated from the company name, e.g. "gamma-insurance-062a10"
+  tenantId: text("tenant_id").primaryKey(),
+  apiKey: text("api_key").notNull().unique(),
+  data: jsonb("data").notNull(), // the full RegisteredConnectorRecord
+});

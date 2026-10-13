@@ -3,6 +3,7 @@ import { z } from "zod";
 import { OllamaLlmClient } from "@pc-core/claims-ai";
 import { LlmPolicyMappingAdvisor, dryRunMapping } from "@pc-core/schema-mapping";
 import { ServiceError, type ServiceErrorCode } from "../service/errors.js";
+import { policyFieldMappingSchema } from "../schemas.js";
 import type { TenantRegistry, TenantServices } from "../tenants.js";
 
 const riskSchema = z.object({
@@ -73,34 +74,6 @@ const overrideSchema = z.object({
   reason: z.string().min(1),
   overrideBy: z.string().min(1),
 });
-const policyFieldMappingSchema = z.object({
-  fields: z.object({
-    policyId: z.string(),
-    policyNumber: z.string(),
-    productCode: z.string(),
-    productVersion: z.string(),
-    status: z.string(),
-    termFrom: z.string(),
-    termTo: z.string(),
-    base: z.string(),
-    baseRecordedAt: z.string(),
-    transactions: z.string(),
-    insuredName: z.string().optional(),
-    cancelledEffectiveFrom: z.string().optional(),
-    customerId: z.string().optional(),
-    renewedFromPolicyId: z.string().optional(),
-  }),
-  statusValues: z.record(z.enum(["QUOTED", "BOUND", "ISSUED", "CANCELLED"])),
-  baseIsJsonEncoded: z.boolean().optional(),
-  transactionFields: z.object({
-    txnType: z.string(),
-    effectiveFrom: z.string(),
-    recordedAt: z.string(),
-    change: z.string(),
-  }),
-  transactionChangeIsJsonEncoded: z.boolean().optional(),
-});
-
 const registerConnectorSchema = z.object({
   name: z.string().min(1),
   policyBaseUrl: z.string().url(),
@@ -208,7 +181,7 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
     const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl, policyFieldMapping } =
       registerConnectorSchema.parse(req.body);
     assertLocalModelUrl(ollamaBaseUrl);
-    const tenant = registry.registerConnector(
+    const tenant = await registry.registerConnector(
       name,
       policyBaseUrl,
       ollamaModel ? { model: ollamaModel, baseUrl: ollamaBaseUrl } : undefined,
