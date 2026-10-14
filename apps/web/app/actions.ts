@@ -12,18 +12,24 @@ import type {
   QuoteResult,
   RenewalResult,
 } from "./types";
-import { DEFAULT_TENANT, TENANT_COOKIE } from "../lib/tenant";
+import { DEFAULT_TENANT, TENANT_COOKIE, TENANT_KEYS_COOKIE, apiKeyFor, parseTenantKeys } from "../lib/tenant";
 
 // Default to IPv4 explicitly: on Windows, "localhost" can resolve to IPv6 (::1)
 // and miss a server bound only on 127.0.0.1.
 const API = process.env.API_URL ?? "http://127.0.0.1:3000";
 
 /** Every call is scoped to whichever tenant is selected in the portal (see
- * tenant-actions.ts) via the API's unauthenticated X-Tenant-Id convenience
- * header — the same one curl-based local demos use. */
+ * tenant-actions.ts). Authenticates with that tenant's real API key — a
+ * well-known constant for "demo"/"beta", or one learned when this browser
+ * session registered a self-serve connector (see registerConnector). The API
+ * only honors the unauthenticated X-Tenant-Id convenience for platform-seeded
+ * tenants, so a self-serve tenant this session never registered simply won't
+ * resolve — the correct, secure behavior, not a bug. */
 async function tenantHeaders(): Promise<Record<string, string>> {
-  const tenantId = (await cookies()).get(TENANT_COOKIE)?.value ?? DEFAULT_TENANT;
-  return { "x-tenant-id": tenantId };
+  const jar = await cookies();
+  const tenantId = jar.get(TENANT_COOKIE)?.value ?? DEFAULT_TENANT;
+  const apiKey = apiKeyFor(tenantId, parseTenantKeys(jar.get(TENANT_KEYS_COOKIE)?.value));
+  return apiKey ? { authorization: `Bearer ${apiKey}` } : { "x-tenant-id": tenantId };
 }
 
 async function readError(res: Response): Promise<string> {

@@ -1,3 +1,6 @@
+import { lookup } from "node:dns/promises";
+import helmet from "@fastify/helmet";
+import rateLimit from "@fastify/rate-limit";
 import Fastify, { type FastifyInstance, type FastifyRequest } from "fastify";
 import { z } from "zod";
 import { OllamaLlmClient } from "@pc-core/claims-ai";
@@ -126,6 +129,84 @@ function assertLocalModelUrl(url: string | undefined): void {
   }
 }
 
+const isProductionEnv = () => process.env.NODE_ENV === "production";
+const allowPrivateConnectorUrls = () => process.env.ALLOW_PRIVATE_CONNECTOR_URLS === "true";
+
+/** IPv4/IPv6 ranges that have no business being the target of a server-side
+ * fetch initiated on another caller's behalf: loopback, RFC1918 private
+ * space, and link-local (which is where cloud metadata endpoints like
+ * 169.254.169.254 live). */
+function isPrivateOrReservedIp(address: string, family: number): boolean {
+  if (family === 4) {
+    const parts = address.split(".").map(Number);
+    if (parts.length !== 4 || parts.some((p) => Number.isNaN(p))) return true; // malformed -> treat as unsafe
+    const [a = 0, b = 0] = parts;
+    if (a === 0 || a === 10 || a === 127) return true;
+    if (a === 169 && b === 254) return true;
+    if (a === 172 && b >= 16 && b <= 31) return true;
+    if (a === 192 && b === 168) return true;
+    return false;
+  }
+  const normalized = address.toLowerCase();
+  if (normalized === "::1") return true;
+  if (normalized.startsWith("::ffff:")) return isPrivateOrReservedIp(normalized.slice(7), 4);
+  if (normalized.startsWith("fe80:")) return true; // link-local
+  if (/^f[cd][0-9a-f]{2}:/.test(normalized)) return true; // fc00::/7 unique local
+  return false;
+}
+
+/**
+ * `policyBaseUrl` on POST /connectors/register is caller-controlled AND the
+ * route itself is unauthenticated (that's the whole point — it's how a
+ * brand-new company self-onboards). Without this check, anyone could
+ * register a "connector" pointing at an internal admin panel or a cloud
+ * metadata endpoint (169.254.169.254) and get the server to make real
+ * outbound HTTP requests there on every call the returned API key makes —
+ * SSRF-as-a-service, using the platform itself as the pivot.
+ *
+ * This resolves the hostname and checks the actual IP (not just the literal
+ * hostname string, which a DNS-rebinding attacker could route around at
+ * request time) against private/loopback/link-local ranges. It does NOT
+ * fully close DNS rebinding — an attacker who changes DNS *after*
+ * registration would need per-request IP pinning inside
+ * RemoteHttpPolicyRepository itself to be caught, which this does not add.
+ * Flagged as a follow-up, not solved here.
+ *
+ * Only enforced when NODE_ENV=production (the near-universal convention for
+ * a real deployment) so the zero-setup local demo — which legitimately
+ * points at 127.0.0.1 (apps/mock-insurer) — keeps working unmodified; an
+ * operator who genuinely needs a private-network target in production can
+ * set ALLOW_PRIVATE_CONNECTOR_URLS=true knowingly.
+ */
+async function assertSafeConnectorUrl(url: string): Promise<void> {
+  let parsed: URL;
+  try {
+    parsed = new URL(url);
+  } catch {
+    throw new ServiceError("policyBaseUrl is not a valid URL", "BAD_REQUEST");
+  }
+  if (parsed.protocol !== "http:" && parsed.protocol !== "https:") {
+    throw new ServiceError("policyBaseUrl must be http or https", "BAD_REQUEST");
+  }
+  if (!isProductionEnv() || allowPrivateConnectorUrls()) return;
+
+  let resolved: { address: string; family: number };
+  try {
+    resolved = await lookup(parsed.hostname);
+  } catch {
+    throw new ServiceError(
+      `policyBaseUrl's host "${parsed.hostname}" does not resolve`,
+      "BAD_REQUEST",
+    );
+  }
+  if (isPrivateOrReservedIp(resolved.address, resolved.family)) {
+    throw new ServiceError(
+      `policyBaseUrl resolves to a private/internal address (${resolved.address}) — set ALLOW_PRIVATE_CONNECTOR_URLS=true if this is genuinely intentional`,
+      "BAD_REQUEST",
+    );
+  }
+}
+
 const httpStatus = (code: ServiceErrorCode): number =>
   code === "NOT_FOUND" ? 404 : code === "CONFLICT" ? 409 : 400;
 
@@ -135,12 +216,36 @@ const httpStatus = (code: ServiceErrorCode): number =>
  * either an `Authorization: Bearer <apiKey>` header (real, per-connector auth
  * — the key a company gets back from POST /connectors/register) or, as an
  * unauthenticated convenience for local demos, an `X-Tenant-Id` header
- * (defaulting to "demo"). Route handlers never know whether the resolved
- * tenant's data lives in-process or on the other side of an HTTP call to a
- * connected company's own system.
+ * (defaulting to "demo"). That convenience path only ever resolves
+ * platform-seeded tenants ("demo", "beta") — TenantRegistry.resolve() refuses
+ * a self-serve-registered tenant, so a connected company's data is only ever
+ * reachable with its real API key, never by guessing or listing its tenant
+ * ID. Route handlers never know whether the resolved tenant's data lives
+ * in-process or on the other side of an HTTP call to a connected company's
+ * own system.
  */
 export function buildServer(registry: TenantRegistry): FastifyInstance {
   const app = Fastify({ logger: false });
+
+  // Baseline headers on every response. The CSP is tightened for what this
+  // API actually serves: mostly JSON (where CSP is a no-op), plus two HTML
+  // document routes (policy schedule / Form 51) whose only inline content is
+  // a single platform-authored <style> block — never request data, which is
+  // always HTML-escaped (see @pc-core/forms's `esc()`) — so allowing inline
+  // styles costs nothing while scripts stay blocked entirely (`script-src
+  // 'self'` with no script ever actually served). `frameAncestors: 'none'`
+  // (plus frameguard's X-Frame-Options) stops those documents from being
+  // embedded elsewhere for a clickjacking-style overlay.
+  void app.register(helmet, {
+    contentSecurityPolicy: {
+      directives: {
+        defaultSrc: ["'self'"],
+        styleSrc: ["'self'", "'unsafe-inline'"],
+        frameAncestors: ["'none'"],
+      },
+    },
+    frameguard: { action: "deny" },
+  });
 
   app.setErrorHandler((err, _req, reply) => {
     if (err instanceof ServiceError) {
@@ -149,7 +254,13 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
         .send({ error: err.message, code: err.code });
     }
     const message = err instanceof Error ? err.message : "Bad Request";
-    return reply.status(400).send({ error: message });
+    // Honor a status code the error already carries (e.g. @fastify/rate-limit's
+    // 429) rather than flattening every non-ServiceError into a 400.
+    const statusCode =
+      typeof (err as { statusCode?: unknown }).statusCode === "number"
+        ? (err as { statusCode: number }).statusCode
+        : 400;
+    return reply.status(statusCode).send({ error: message });
   });
 
   const id = (req: { params: unknown }) => (req.params as { id: string }).id;
@@ -174,45 +285,70 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   // ── platform ─────────────────────────────────────────────────────────────
   app.get("/tenants", async () => registry.list());
 
-  // Self-serve onboarding: point PC Core at a REST service implementing the
-  // policy connector contract and get back a tenant ID + API key. No code
-  // change or redeploy on PC Core's side — this is the "connect my system" door.
-  app.post("/connectors/register", async (req, reply) => {
-    const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl, policyFieldMapping } =
-      registerConnectorSchema.parse(req.body);
-    assertLocalModelUrl(ollamaBaseUrl);
-    const tenant = await registry.registerConnector(
-      name,
-      policyBaseUrl,
-      ollamaModel ? { model: ollamaModel, baseUrl: ollamaBaseUrl } : undefined,
-      policyFieldMapping,
-    );
-    return reply.status(201).send(tenant);
-  });
+  // Both of these are unauthenticated by design (self-serve onboarding has
+  // no credential yet to check), so they're the two routes worth capping
+  // against spam registrations / local-model-call abuse — everything else
+  // needs a valid API key or is the "demo" convenience. Scoped in their own
+  // nested plugin, registering @fastify/rate-limit with `await` *before*
+  // adding the routes: without that await, Fastify's registration for this
+  // plugin wouldn't finish installing its onRoute hook before these routes
+  // existed, and the rate limit would silently never apply — easy to get
+  // wrong since `app.register(plugin)` elsewhere in this file is
+  // deliberately fire-and-forget (Fastify queues it regardless of whether
+  // you await), but per-route config via `config.rateLimit` specifically
+  // needs the plugin's own onRoute hook to already be attached.
+  void app.register(async (scoped) => {
+    await scoped.register(rateLimit, { global: false });
 
-  // A company's policy service usually returns records in ITS OWN shape, not
-  // PolicyAggregate directly. This proposes the field mapping a local model
-  // infers from a few real sample records — a PROPOSAL only: dryRun below
-  // shows whether it actually maps+validates cleanly, and a person is meant
-  // to review it before passing it back as policyFieldMapping to
-  // /connectors/register above. No mapping is ever applied automatically.
-  app.post("/connectors/propose-mapping", async (req, reply) => {
-    const { sampleRecords, ollamaModel, ollamaBaseUrl } = proposeMappingSchema.parse(
-      req.body,
+    // Self-serve onboarding: point PC Core at a REST service implementing the
+    // policy connector contract and get back a tenant ID + API key. No code
+    // change or redeploy on PC Core's side — this is the "connect my system" door.
+    scoped.post(
+      "/connectors/register",
+      { config: { rateLimit: { max: 5, timeWindow: "1 minute" } } },
+      async (req, reply) => {
+        const { name, policyBaseUrl, ollamaModel, ollamaBaseUrl, policyFieldMapping } =
+          registerConnectorSchema.parse(req.body);
+        assertLocalModelUrl(ollamaBaseUrl);
+        await assertSafeConnectorUrl(policyBaseUrl);
+        const tenant = await registry.registerConnector(
+          name,
+          policyBaseUrl,
+          ollamaModel ? { model: ollamaModel, baseUrl: ollamaBaseUrl } : undefined,
+          policyFieldMapping,
+        );
+        return reply.status(201).send(tenant);
+      },
     );
-    assertLocalModelUrl(ollamaBaseUrl);
-    const advisor = new LlmPolicyMappingAdvisor(
-      new OllamaLlmClient({ model: ollamaModel, baseUrl: ollamaBaseUrl }),
+
+    // A company's policy service usually returns records in ITS OWN shape, not
+    // PolicyAggregate directly. This proposes the field mapping a local model
+    // infers from a few real sample records — a PROPOSAL only: dryRun below
+    // shows whether it actually maps+validates cleanly, and a person is meant
+    // to review it before passing it back as policyFieldMapping to
+    // /connectors/register above. No mapping is ever applied automatically.
+    scoped.post(
+      "/connectors/propose-mapping",
+      { config: { rateLimit: { max: 10, timeWindow: "1 minute" } } },
+      async (req, reply) => {
+        const { sampleRecords, ollamaModel, ollamaBaseUrl } = proposeMappingSchema.parse(
+          req.body,
+        );
+        assertLocalModelUrl(ollamaBaseUrl);
+        const advisor = new LlmPolicyMappingAdvisor(
+          new OllamaLlmClient({ model: ollamaModel, baseUrl: ollamaBaseUrl }),
+        );
+        const mapping = await advisor.proposeMapping(sampleRecords);
+        if (!mapping) {
+          return reply.status(422).send({
+            error:
+              "the model could not propose a usable mapping from these samples — try more/clearer sample records, or write the mapping by hand",
+          });
+        }
+        const dryRun = dryRunMapping(sampleRecords, mapping);
+        return reply.status(200).send({ mapping, dryRun });
+      },
     );
-    const mapping = await advisor.proposeMapping(sampleRecords);
-    if (!mapping) {
-      return reply.status(422).send({
-        error:
-          "the model could not propose a usable mapping from these samples — try more/clearer sample records, or write the mapping by hand",
-      });
-    }
-    const dryRun = dryRunMapping(sampleRecords, mapping);
-    return reply.status(200).send({ mapping, dryRun });
   });
 
   // ── customers ────────────────────────────────────────────────────────────

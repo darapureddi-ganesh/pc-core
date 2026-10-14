@@ -96,6 +96,10 @@ interface RegisteredTenant {
   info: TenantInfo;
   apiKey: string;
   services: TenantServices;
+  /** true for a self-serve `registerConnector` tenant (a real connected
+   * company's data) — see `resolve()` for why this gates the unauthenticated
+   * lookup path. false for a platform-seeded tenant ("demo", "beta"). */
+  selfServe: boolean;
 }
 
 function buildServices(
@@ -208,7 +212,10 @@ export class TenantRegistry {
 
   constructor(private readonly store?: TenantRegistryStore) {}
 
-  /** Register a tenant with an explicit ID and key — used to seed well-known demo tenants. */
+  /** Register a tenant with an explicit ID and key — used to seed well-known
+   * demo tenants (`selfServe` defaults to false) and, internally, to rebuild
+   * a self-serve connector (which passes `selfServe: true` — see
+   * `registerConnector`/`hydrate`). */
   register(
     info: TenantInfo,
     connector: Connector,
@@ -216,11 +223,13 @@ export class TenantRegistry {
     claimsAi?: ClaimsAiProviders,
     seedHandlers?: Handler[],
     triageAdvisor?: TriageAdvisor,
+    selfServe = false,
   ): void {
     const entry: RegisteredTenant = {
       info,
       apiKey,
       services: buildServices(info, connector, claimsAi, seedHandlers, triageAdvisor),
+      selfServe,
     };
     this.byTenantId.set(info.tenantId, entry);
     this.byApiKey.set(apiKey, entry);
@@ -263,7 +272,7 @@ export class TenantRegistry {
       ollama,
       policyFieldMapping,
     );
-    this.register(info, connector, apiKey, claimsAi, undefined, triageAdvisor);
+    this.register(info, connector, apiKey, claimsAi, undefined, triageAdvisor, true);
 
     const record: RegisteredConnectorRecord = {
       tenantId: info.tenantId,
@@ -318,14 +327,31 @@ export class TenantRegistry {
         claimsAi,
         undefined,
         triageAdvisor,
+        true,
       );
       restored += 1;
     }
     return restored;
   }
 
+  /**
+   * Unauthenticated lookup by bare tenant ID — the convenience the HTTP
+   * layer falls back to when a request carries no `Authorization: Bearer`
+   * header (see server.ts's `services()`). Deliberately refuses a
+   * self-serve tenant: `GET /tenants` lists every tenant ID by name with no
+   * credential at all, so if this resolved self-serve tenants too, anyone
+   * who called that endpoint could then read and write a connected
+   * company's live policies, claims and billing by just setting
+   * `X-Tenant-Id` to that company's ID — no API key needed. Restricting
+   * this path to platform-seeded tenants ("demo", "beta" — intentionally
+   * public fixtures) closes that off while keeping the zero-setup local
+   * demo flow working exactly as before. A self-serve tenant is only ever
+   * reachable via `resolveByApiKey`.
+   */
   resolve(tenantId: string): TenantServices | undefined {
-    return this.byTenantId.get(tenantId)?.services;
+    const entry = this.byTenantId.get(tenantId);
+    if (!entry || entry.selfServe) return undefined;
+    return entry.services;
   }
 
   resolveByApiKey(apiKey: string): TenantServices | undefined {

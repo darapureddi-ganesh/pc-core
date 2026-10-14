@@ -2,13 +2,17 @@
 
 import { cookies } from "next/headers";
 import type { Customer, CustomerHistory } from "./types";
-import { DEFAULT_TENANT, TENANT_COOKIE } from "../lib/tenant";
+import { DEFAULT_TENANT, TENANT_COOKIE, TENANT_KEYS_COOKIE, apiKeyFor, parseTenantKeys } from "../lib/tenant";
 
 const API = process.env.API_URL ?? "http://127.0.0.1:3000";
 
+// See actions.ts's tenantHeaders for why this authenticates with a real API
+// key rather than the unauthenticated X-Tenant-Id convenience.
 async function tenantHeaders(): Promise<Record<string, string>> {
-  const tenantId = (await cookies()).get(TENANT_COOKIE)?.value ?? DEFAULT_TENANT;
-  return { "x-tenant-id": tenantId };
+  const jar = await cookies();
+  const tenantId = jar.get(TENANT_COOKIE)?.value ?? DEFAULT_TENANT;
+  const apiKey = apiKeyFor(tenantId, parseTenantKeys(jar.get(TENANT_KEYS_COOKIE)?.value));
+  return apiKey ? { authorization: `Bearer ${apiKey}` } : { "x-tenant-id": tenantId };
 }
 
 async function readError(res: Response): Promise<string> {
