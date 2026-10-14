@@ -11,9 +11,9 @@
     "@pc-core/db": "workspace:*",
     "@pc-core/ports": "workspace:*",
     "@pc-core/schema-mapping": "workspace:*",
-    "drizzle-orm": "^0.36.4"
+    "drizzle-orm": "^0.45.2"
   },
   "devDependencies": {
-    "fastify": "^5.1.0"
+    "fastify": "^5.12.5"
   }
 }

@@ -213,11 +213,22 @@ PORTAL_PASSWORD=your-password       # default: pc-core-demo
 PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
 ```
 
+Login is throttled (5 failed attempts / 15 minutes per caller — there's no
+per-user account to lock here, it's one shared password, so this throttles
+the caller instead) and the password check is constant-time. Leaving either
+env var at its default is loud, not silent: with `NODE_ENV=production`, both
+log an explicit warning on boot, since both defaults are published in this
+README.
+
 A tenant switcher in the header (`app/tenant-switcher.tsx`) lists every
-registered tenant (`GET /tenants`) and lets you flip between them — every
-server action then sends `X-Tenant-Id` for whichever tenant is selected
-(`app/tenant-actions.ts`), the same unauthenticated convenience header the
-API offers for local demos. Switching to `beta` only resolves if
+registered tenant (`GET /tenants`) and lets you flip between them. Every
+server action then authenticates as whichever tenant is selected
+(`app/tenant-actions.ts` / `app/actions.ts`) — with that tenant's real API
+key when the portal has one (a well-known constant for `demo`/`beta`, or one
+learned when this browser session registered a self-serve connector),
+falling back to the API's unauthenticated `X-Tenant-Id` convenience only as a
+last resort — which, as of the tenant-isolation fix above, only ever
+resolves `demo`/`beta` anyway. Switching to `beta` only resolves if
 `apps/mock-insurer` is actually running (`pnpm platform` instead of `pnpm dev`)
 — otherwise you'll correctly see a real connection error, proving the tenant
 data really is routed to a different backend, not just relabeled.
@@ -350,7 +361,13 @@ curl -sX POST localhost:3000/connectors/register -H 'content-type: application/j
 ```
 
 Every route resolves its tenant from `Authorization: Bearer <apiKey>` (the real,
-per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header:
+per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header
+— but that header-only path **only ever resolves the two seeded tenants**
+(`demo`, `beta`), never a self-serve-registered one. `GET /tenants` is itself
+unauthenticated and lists every tenant by name, so without that restriction,
+anyone who called it could impersonate a connected company by just setting
+that header — no API key needed. A real connector is only ever reachable with
+its real key:
 
 ```bash
 curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
@@ -358,6 +375,15 @@ curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
 # Gamma's issued policy is numbered by GAMMA'S OWN system and stored in its own
 # schema — PC Core never sees it. Beta's the same, via the seeded demo tenant.
 ```
+
+`policyBaseUrl` is also checked against private/loopback/link-local ranges
+(the same SSRF-prone pattern as any "register a callback URL" feature) —
+enforced once `NODE_ENV=production`, so the zero-setup local demo against
+`apps/mock-insurer` on `127.0.0.1` keeps working unmodified; set
+`ALLOW_PRIVATE_CONNECTOR_URLS=true` if a real deployment genuinely needs a
+private-network target. Self-serve registration is also rate-limited
+(5/minute/IP — it's unauthenticated by design, so it's the one route worth
+capping against spam).
 
 Run the platform demo (API + a stand-in external insurer, printing both demo
 API keys on boot) with `pnpm platform`.
@@ -542,3 +568,20 @@ authorized adapter behind either port for production use.
   `policy_period` rows so the Postgres GiST exclusion constraint is actually
   enforced; a `@pc-core/contracts` types package shared by api + web; wire
   claim settlements into the billing ledger
+- **security — done in this pass**: the tenant-impersonation hole (unauthenticated
+  `X-Tenant-Id` + `GET /tenants` enumeration), SSRF on `POST /connectors/register`'s
+  `policyBaseUrl`, zero rate limiting on the two unauthenticated connector
+  routes, baseline HTTP security headers (helmet on the API, a few on the
+  portal), portal login brute-force throttling + constant-time compare, and a
+  dependency sweep (next/fastify/drizzle-orm upgraded for real CVEs).
+- **security — still open**: a real payment gateway (today `recordPayment` is
+  an internal ledger entry only); the SSRF guard above checks the resolved IP
+  at registration time but doesn't defend DNS rebinding *after* registration
+  (would need per-request IP pinning inside `RemoteHttpPolicyRepository`
+  itself); `expr-eval` (the rating engine's formula evaluator) has an
+  unpatched RCE/prototype-pollution advisory with no fixed release — not
+  exploitable today since it only ever evaluates operator-authored product
+  YAML, never request input, but revisit before any feature lets external
+  input reach it; vitest/vite's own toolchain carries a few advisories too
+  (dev-only, not part of the deployed runtime) — a vitest 2→4 major bump
+  would close them but needs its own regression pass, not bundled into this one.

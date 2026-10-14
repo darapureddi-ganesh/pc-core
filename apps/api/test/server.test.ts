@@ -390,4 +390,89 @@ describe("self-serve connector onboarding + API-key auth", () => {
     expect(res.statusCode).toBe(201);
     await app.close();
   });
+
+  it("rate-limits unauthenticated connector registration after 5 requests/minute", async () => {
+    const app = newApp();
+    const attempt = (n: number) =>
+      app.inject({
+        method: "POST",
+        url: "/connectors/register",
+        payload: { name: `Spam Co ${n}`, policyBaseUrl: "http://127.0.0.1:4000" },
+      });
+
+    for (let i = 0; i < 5; i++) {
+      const res = await attempt(i);
+      expect(res.statusCode).toBe(201);
+    }
+    const sixth = await attempt(5);
+    expect(sixth.statusCode).toBe(429);
+    await app.close();
+  });
+
+  it("blocks a private/loopback policyBaseUrl in production (SSRF guard), unless explicitly allowed", async () => {
+    const originalNodeEnv = process.env.NODE_ENV;
+    const originalAllow = process.env.ALLOW_PRIVATE_CONNECTOR_URLS;
+    process.env.NODE_ENV = "production";
+    delete process.env.ALLOW_PRIVATE_CONNECTOR_URLS;
+    try {
+      const app = newApp();
+      // 127.0.0.1 is exactly where apps/mock-insurer runs in the local demo
+      // — the point is that an unauthenticated caller can't point the
+      // server at an arbitrary internal address once this is a real,
+      // production deployment, not that loopback itself is special.
+      const blocked = await app.inject({
+        method: "POST",
+        url: "/connectors/register",
+        payload: { name: "Attacker Co", policyBaseUrl: "http://127.0.0.1:4000" },
+      });
+      expect(blocked.statusCode).toBe(400);
+      expect(blocked.json().error).toMatch(/private\/internal address/);
+
+      process.env.ALLOW_PRIVATE_CONNECTOR_URLS = "true";
+      const allowed = await app.inject({
+        method: "POST",
+        url: "/connectors/register",
+        payload: { name: "Trusted Co", policyBaseUrl: "http://127.0.0.1:4000" },
+      });
+      expect(allowed.statusCode).toBe(201);
+      await app.close();
+    } finally {
+      process.env.NODE_ENV = originalNodeEnv;
+      if (originalAllow === undefined) delete process.env.ALLOW_PRIVATE_CONNECTOR_URLS;
+      else process.env.ALLOW_PRIVATE_CONNECTOR_URLS = originalAllow;
+    }
+  });
+
+  it("never resolves a self-serve tenant via the unauthenticated X-Tenant-Id header — API key only", async () => {
+    const app = newApp();
+    const reg = await app.inject({
+      method: "POST",
+      url: "/connectors/register",
+      payload: { name: "External Co", policyBaseUrl: externalBaseUrl },
+    });
+    const { tenantId, apiKey } = reg.json();
+
+    // GET /tenants is unauthenticated and lists this tenant by ID — so an
+    // attacker with no credentials at all could read it off that list and
+    // try to impersonate the company by just setting this header. It must
+    // not work, even though the exact same header fully authenticates a
+    // platform-seeded tenant like "demo" (see the test above).
+    const asImpersonator = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: { "x-tenant-id": tenantId },
+    });
+    expect(asImpersonator.statusCode).toBe(404);
+
+    // The real API key still works.
+    const asOwner = await app.inject({
+      method: "POST",
+      url: "/quotes",
+      payload: quotePayload,
+      headers: { authorization: `Bearer ${apiKey}` },
+    });
+    expect(asOwner.statusCode).toBe(201);
+    await app.close();
+  });
 });

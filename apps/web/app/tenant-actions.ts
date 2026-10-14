@@ -3,7 +3,7 @@
 import { cookies } from "next/headers";
 import { revalidatePath } from "next/cache";
 import type { ConnectorRegistration, TenantInfo } from "./types";
-import { DEFAULT_TENANT, TENANT_COOKIE } from "../lib/tenant";
+import { DEFAULT_TENANT, TENANT_COOKIE, TENANT_KEYS_COOKIE, parseTenantKeys } from "../lib/tenant";
 
 const API = process.env.API_URL ?? "http://127.0.0.1:3000";
 
@@ -49,6 +49,23 @@ export async function registerConnector(
   });
   if (!res.ok) throw new Error(await readError(res));
   const registration = (await res.json()) as ConnectorRegistration;
+
+  // Remember this tenant's real API key so every later call the portal
+  // makes on its behalf authenticates with it (see actions.ts's
+  // tenantHeaders) — the API only honors the unauthenticated X-Tenant-Id
+  // convenience for platform-seeded tenants, never a self-serve one.
+  const jar = await cookies();
+  const learnedKeys = parseTenantKeys(jar.get(TENANT_KEYS_COOKIE)?.value);
+  learnedKeys[registration.tenantId] = registration.apiKey;
+  // This cookie holds real API keys in cleartext — httpOnly so no XSS can
+  // read it via document.cookie, secure once there's real TLS to require.
+  jar.set(TENANT_KEYS_COOKIE, JSON.stringify(learnedKeys), {
+    sameSite: "lax",
+    path: "/",
+    httpOnly: true,
+    secure: process.env.NODE_ENV === "production",
+  });
+
   // The tenant list (and the switcher that reads it) should include this
   // new connector immediately, without a manual refresh.
   revalidatePath("/", "layout");

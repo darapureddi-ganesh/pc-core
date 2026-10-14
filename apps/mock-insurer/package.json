@@ -10,6 +10,6 @@
   },
   "dependencies": {
     "@pc-core/ports": "workspace:*",
-    "fastify": "^5.1.0"
+    "fastify": "^5.12.5"
   }
 }
