@@ -1,501 +1,157 @@
 # PC Core
 
-**Policy & Claims Core** — an open-source **P&C insurance core** — motor
-line. A config-over-code, effective-dated policy platform in the spirit of
-Guidewire / Duck Creek, built in the open.
-
-A working motor core on an effective-dated spine: **policy lifecycle, rating,
-billing, claims, and documents**, with a Next.js agent portal on top. All logic
-is pure and tested; persistence is behind repository ports (in-memory today,
-Postgres-ready).
-
-## Try it
-
-One command runs the API and the agent portal together:
-
-```bash
-pnpm install
-pnpm dev
-```
-
-Then open **http://localhost:3001**, sign in with the demo password
-(`pc-core-demo`, see "Portal login + tenant switching" below), and click
-through the whole lifecycle: enter a vehicle, get a config-driven quote,
-bind, issue — the portal then auto-invoices the premium, lets you pay it
-off, and links straight to the generated **policy schedule** and
-**Form 51 certificate**. Every number and every document field traces back
-to `packages/products/private_car.2026.1.yaml`.
-
-(`pnpm demo` runs a separate, non-interactive CLI walkthrough of the rating
-engine and the temporal timeline — no servers needed.)
-
-## What's here
-
-```
-apps/
-  api/            multi-tenant Fastify service: lifecycle + billing + claims + docs
-  web/            Next.js agent portal: quote -> bind -> issue, over the API
-  mock-insurer/   a stand-in "company's own system" — its own schema, over HTTP
-packages/
-  ports/          the Connector SDK: storage contracts a company implements
-  adapters/       reference adapters: in-memory + RemoteHttpPolicyRepository
-  domain/         effective-dated / bitemporal timeline  (pure, tested)
-  config-engine/  product loader + rating interpreter + rules  (pure, tested)
-  billing/        double-entry ledger + installment schedule  (pure, tested)
-  claims-ai/      IDP field extraction + fraud scoring  (pure, tested)
-  claims-queue/   claim triage, SLA windows, handler assignment scoring  (pure, tested)
-  forms/          policy schedule + Form 51 + premium register renderers  (pure, tested)
-  db/             drizzle schema + the temporal migration (exclusion constraint)
-  products/       private_car.2026.1.yaml — the product IS this file
-tooling/
-  demo.ts         end-to-end walkthrough
-```
-
-The **domain** and **config-engine** packages import nothing from a framework
-or database — they take plain objects and return plain objects. That's what
-makes the rating logic testable with golden files and portable to a future
-channel (a BimaSugam / ONDC front end, say).
+**Policy & Claims Core** is an open-source P&C insurance core for the Indian
+motor line. It covers policy lifecycle, rating, billing, claims and documents,
+with a Next.js agent portal on top. Products are config (YAML), policies are
+effective-dated timelines, and all business logic is pure and tested.
 
 ## Quick start
 
 ```bash
 pnpm install
-pnpm test      # runs the two proofs below — no Postgres needed
-pnpm demo      # prints a quote breakdown + a timeline reconstruction
+pnpm dev        # API on :3000 + portal on :3001
 ```
 
-## The two proofs
-
-**1. The effective-dated spine** (`packages/domain`). A policy is a timeline you
-reconstruct, not a row you update. The test issues a 12-month policy, adds a
-driver mid-term, then inserts a **backdated** endorsement _before_ it — and
-reconstructs the policy correctly as-of several dates, on both the business-time
-and system-time axes. Pass this and the hard part is done.
-
-**2. Config-over-code rating** (`packages/config-engine`). No code knows what
-"Private Car" is. The engine loads `private_car.2026.1.yaml`, runs its ordered
-rating algorithm, and evaluates its json-logic rules. Changing the NCB scale,
-adding an add-on or moving a referral threshold is a metadata edit — the test
-proves the numbers trace to the YAML.
-
-The NCB slabs and TP tariff in that YAML aren't placeholders — they're sourced
-from real IRDAI regulation: NCB (20/25/35/45/50%) from the 2002 India Motor
-Tariff, and the annual TP premium (₹2,094 / ₹3,416 / ₹7,897 by cc) plus the
-mandatory **3-year new-vehicle TP lump sum** (₹6,521 / ₹10,640 / ₹24,596) from
-the Gazette of India's *Motor Vehicles (Third Party Insurance Base Premium and
-Liability) Rules, 2022*. Check "New vehicle (first registration)" on the quote
-form to price a brand-new car's mandatory 3-year TP term instead of the annual
-one (`newVehicle` on `QuoteInput` / `POST /quotes`).
-
-## Where the database comes in
-
-`packages/db` holds two things:
-
-- `migrations/0001_policy_period.sql` — a normalized `policy`/`policy_period`
-  schema whose load-bearing line is a Postgres **GiST exclusion constraint**
-  that makes overlapping issued slices impossible at the storage layer. Not
-  yet wired into a repository adapter — future work is materializing the
-  transaction-log domain model into these rows so the constraint is actually
-  enforced.
-- `migrations/0002_jsonb_adapters.sql` — pragmatic JSONB tables backing every
-  Connector SDK port today (`PostgresPolicyRepository`,
-  `PostgresBillingRepository`, `PostgresClaimsRepository`,
-  `PostgresHandlersRepository`, `PostgresAssignmentLogRepository` in
-  `@pc-core/adapters`): the same aggregate shape the in-memory adapters hold
-  in a `Map`, just durable. Set `DATABASE_URL` and the `demo` tenant runs
-  against real Postgres instead — useful for a pilot on infra a company
-  actually controls (e.g. India's data-localization requirement), without
-  waiting on the normalized model above.
+Open http://localhost:3001 and sign in with `pc-core-demo`. Quote a car, bind,
+issue, pay the invoice, open the policy schedule and Form 51, then file a claim
+and work it through the claims queue.
 
 ```bash
-createdb pc_core_dev
-psql pc_core_dev -f packages/db/migrations/0002_jsonb_adapters.sql
-DATABASE_URL=postgres://localhost/pc_core_dev pnpm --filter @pc-core/api start
+pnpm test       # all tests, no Postgres needed
+pnpm typecheck
+pnpm demo       # CLI walkthrough of rating and the policy timeline
+pnpm platform   # API + mock-insurer, to try a second tenant on its own backend
 ```
 
-## Policy lifecycle API (P3)
+## Layout
 
-`apps/api` wires the two pure packages into a lifecycle service — quote → bind →
-issue → endorse → cancel, plus as-of reconstruction — behind a Fastify HTTP
-surface. It depends only on a `PolicyRepository` port; the in-memory adapter is
-used by tests and local dev by default, and the Postgres adapter above (or a
-connected company's own system, via `RemoteHttpPolicyRepository`) slots in
-with no code change. Endorsements are stored as persistable deltas and
-**re-rated** on read, so a backdated endorsement recomputes every downstream
-slice.
+```
+apps/
+  api/            multi-tenant Fastify API
+  web/            Next.js agent portal
+  mock-insurer/   stand-in for a company's own policy system, over HTTP
+packages/
+  ports/          storage contracts a company implements (the Connector SDK)
+  adapters/       in-memory, Postgres, remote-HTTP and mock VAHAN/DigiLocker adapters
+  domain/         effective-dated / bitemporal policy timeline
+  config-engine/  product loader, rating interpreter, rules
+  billing/        double-entry ledger + installment schedule
+  claims-ai/      document extraction, fraud scoring, vehicle and coverage checks
+  claims-queue/   triage, IRDAI clocks, SLA, handler assignment
+  forms/          policy schedule, Form 51, premium register
+  db/             Drizzle schema + migrations
+  products/       private_car.2026.1.yaml — the product definition
+```
+
+## How it works
+
+**Effective-dated policies.** A policy is a timeline you reconstruct, not a
+row you update. Endorsements are stored as deltas and re-rated on read, so a
+backdated endorsement recomputes every later slice. Claims look the policy up
+as of the incident date, so the sum insured is whatever was in force then.
+
+**Config-over-code rating.** No code knows what "Private Car" is. The engine
+runs the ordered algorithm and rules in `private_car.2026.1.yaml`. The NCB
+slabs come from the India Motor Tariff, and the TP premiums (annual, and the
+mandatory 3-year term for new cars) from the Motor Vehicles (Third Party
+Insurance Base Premium and Liability) Rules, 2022.
+
+**Claims.** First notice of loss runs fraud scoring, document extraction and
+an optional VAHAN cross-check. Triage and assignment are deterministic rules.
+Each claim runs against IRDAI's clocks: surveyor within 24 hours, survey
+report within 15 days, settlement within 7 days of the report. Payments are
+maker-checker: a handler releases up to their payment authority, and anything
+larger needs a second handler. Payments can't exceed the reserve. Recovery
+(subrogation or salvage) is tracked per claim, and every action goes into the
+claim's activity log.
+
+**AI is advisory.** Extraction, fraud scoring and triage sit behind swappable
+interfaces with rule-based defaults. Point them at a local model and the rules
+still decide: fraud scoring falls back to the heuristic if the model fails,
+and triage hints are shown next to the rules' result, never applied.
+
+## API
+
+Every route resolves its tenant from `Authorization: Bearer <apiKey>`, or from
+`X-Tenant-Id` for local demos (default `demo`).
 
 ```bash
-pnpm --filter @pc-core/api start    # listens on :3000 (in-memory store)
+# policy
+POST /quotes                         {productCode, term, risk, insured?, customerId?}
+POST /policies/:id/bind | /issue | /endorsements | /cancel
+GET  /policies/:id?asOf=YYYY-MM-DD   # the re-rated slice in effect on that date
+
+# billing
+POST /policies/:id/payments          {amount, date}
+GET  /policies/:id/billing
+
+# claims
+POST /policies/:id/claims            {incidentDate, cause, rawIntakeText?, declaredVehicle?}
+GET  /claims/:id | /claims/:id/coverage
+POST /claims/:id/reserve | /settle   {amount}
+POST /claims/:id/surveyor            {name, by}
+POST /claims/:id/survey-report       {assessedAmount, by}
+POST /claims/:id/payments            {payee, payeeType, mode, account, ifsc?, amount, requestedBy}
+POST /claims/:id/payments/:paymentId/approve   {approvedBy}
+POST /claims/:id/recovery            {against, theirInsurer?, targetMin, targetMax, by}
+POST /claims/:id/recovery/steps      {step, amount?, note?, by}
+POST /claims/:id/recovery/settle     {amount, date, by}
+
+# claim queue
+POST /claims/:id/classify | /assign
+POST /claims/:id/override            {handlerId, reason, overrideBy}
+GET  /claims/queue/status | /claims/overview | /handlers
+
+# customers
+POST /customers                      {name, email?, phone?}
+GET  /customers | /customers/:id | /customers/:id/history
+
+# documents
+GET  /policies/:id/documents/schedule | /certificate
+GET  /reports/premium-register       # CSV
+
+# platform
+GET  /tenants
+POST /connectors/register            {name, policyBaseUrl, ollamaModel?, ollamaBaseUrl?}
 ```
 
-```bash
-# quote a car
-curl -sX POST localhost:3000/quotes -H 'content-type: application/json' -d '{
-  "productCode":"PRIVATE_CAR",
-  "term":{"from":"2026-01-01","to":"2027-01-01"},
-  "risk":{"vehicle":{"cc":1200,"idv":600000,"rtoZone":"A","age":2},
-          "policy":{"ncb":25},"selectedAddOns":["ZERO_DEP"],
-          "coverages":{"tpSelected":true}}}'
-# -> { "policyId": "...", "rating": { ... "total": 21642.38 } }
-```
-
-Then `POST /policies/:id/bind`, `/issue`, `/endorsements`, and
-`GET /policies/:id?asOf=2026-06-01` to read the re-rated slice in effect.
-
-## Agent portal (P4)
-
-`apps/web` is a Next.js portal that drives the whole flow — enter a vehicle, see
-the priced breakdown, bind, issue, pay the invoice, and open the generated
-documents — by calling the API over HTTP from server actions. `pnpm dev` (above)
-runs it alongside the API; to run them separately:
-
-```bash
-pnpm --filter @pc-core/api start    # API on :3000
-pnpm --filter @pc-core/web start    # portal on :3001  (build first: --filter @pc-core/web build)
-```
-
-The portal reads `API_URL` server-side (default `http://127.0.0.1:3000` — IPv4
-on purpose, since `localhost` can resolve to IPv6 on Windows and miss the API)
-and links to documents via the client-visible `API_PUBLIC_BASE` in `app/config.ts`.
-
-Once a policy is issued, the same page lets you file a claim (FNOL) — with an
-optional free-text intake note — classify it, and auto-assign it to a
-handler. The claims-AI pillars run automatically on that FNOL call and are
-shown inline: the IDP extractor's fields pulled from the intake note, the
-fraud score with its actual signal text, and the classification pipeline
-trace (baseline vs. company-rule override) plus the ranked handler
-candidates. A second route, **Claims queue** (`app/claims/page.tsx`), is an
-ops dashboard over `GET /claims/queue/status`: pending/assigned counts,
-SLA-breach alerts, and live handler workload.
-
-### Portal login + tenant switching
-
-The whole portal sits behind a demo-grade login (`middleware.ts` + `lib/auth.ts`)
-— one shared password gates an HMAC-signed session cookie. This is **not**
-tenant-level authorization (the API already does that per-connector via
-`Authorization: Bearer <apiKey>`); it's just a login screen so the portal
-isn't wide open to anyone with the URL.
-
-```bash
-PORTAL_PASSWORD=your-password       # default: pc-core-demo
-PORTAL_AUTH_SECRET=some-long-secret # signs the session cookie; default is a fixed dev value — set a real one before deploying anywhere shared
-```
-
-A tenant switcher in the header (`app/tenant-switcher.tsx`) lists every
-registered tenant (`GET /tenants`) and lets you flip between them — every
-server action then sends `X-Tenant-Id` for whichever tenant is selected
-(`app/tenant-actions.ts`), the same unauthenticated convenience header the
-API offers for local demos. Switching to `beta` only resolves if
-`apps/mock-insurer` is actually running (`pnpm platform` instead of `pnpm dev`)
-— otherwise you'll correctly see a real connection error, proving the tenant
-data really is routed to a different backend, not just relabeled.
-
-A third route, **Connectors** (`app/connectors/page.tsx`), makes the Connector
-SDK's self-serve onboarding (`POST /connectors/register`) clickable instead of
-curl-only: point it at any REST service implementing the policy connector
-contract and get back a tenant + API key immediately, with a one-click
-"switch the portal to this tenant." Pointed at the default URL
-(`http://127.0.0.1:4000`, `apps/mock-insurer`, so run `pnpm platform`), a
-freshly-registered tenant's issued policies come back numbered by
-**that system's own scheme** (`BETA-000001`), not PC Core's — proof the
-connector is genuinely routed, not just relabeled.
-
-## Billing & claims (P5)
-
-Issuing a policy auto-creates a premium **invoice** on a double-entry ledger
-(`packages/billing`); payments draw the receivable down and balances are always
-derived from journal entries, never stored. Claims are anchored to the temporal
-model: **first-notice-of-loss looks the policy up as-of the incident date**, so a
-claim's sum insured is exactly what was in force then — even across a mid-term
-IDV endorsement.
-
-```bash
-POST /policies/:id/payments   {amount, date}     # draw down the invoice
-GET  /policies/:id/billing                        # statement: total, paid, outstanding
-POST /policies/:id/claims     {incidentDate, cause}   # FNOL -> cover as-of incident
-POST /claims/:id/reserve      {amount}
-POST /claims/:id/settle       {amount}
-```
-
-## Customer identity — the thing that ties a person's history together
-
-Everything above anchors to a *policy*. Nothing anchored to a *person* until
-now: a policy's `insured` field was always just a descriptive name string used
-on documents, with no way to look up "everything about this customer" across
-renewals, multiple vehicles, or every claim on every one of their policies —
-a real gap against the "system of record" a production insurance core needs,
-and the prerequisite for any future customer-facing (as opposed to
-agent-facing) portal.
-
-`CustomerService` (`apps/api/src/service/customer-service.ts`) adds that
-identity: register a customer, link a policy to them at quote time
-(`customerId` on `QuoteInput`/`POST /quotes`), and pull their aggregated
-history back — every policy and every claim across all of them — in one call.
-Like every other domain here, storage is a Connector SDK port
-(`CustomerRepository`), with in-memory and Postgres adapters.
-
-```bash
-POST /customers                   {name, email?, phone?}   # -> {customerId, ...}
-GET  /customers                                             # directory
-GET  /customers/:id                                         # one customer
-GET  /customers/:id/history                                 # {customer, policies, claims}
-```
-
-The portal's **Customers** page (`app/customers/page.tsx`) makes this
-clickable: register a customer, paste their ID into the quote form's
-"Customer ID" field, and issue as many policies against them as you like —
-the history page then shows every one of those policies and every claim
-across them, aggregated live.
-
-## Claim queue — triage, SLA, assignment
-
-Once a claim is on file, `ClaimQueueService` (`apps/api/src/service/claim-queue-service.ts`)
-handles the triage/routing side of it, backed by pure rules in
-`packages/claims-queue`: no hosted ML (same stance as claims-AI's fraud
-scorer) — a deterministic baseline derives claim type from the description and
-priority/complexity from the amount, and a company's own rules (VIP
-policyholders, urgent keywords) can override the **priority** baseline to
-CRITICAL, with the baseline and any override both returned for audit
-(claim type and complexity are amount/keyword-derived only — not currently
-rule-overridable). Assignment is a weighted score over each handler's
-expertise match, workload headroom, availability and speed; manual overrides
-are written to an audit log with the reviewer's identity and reason (an
-IRDAI requirement).
-
-```bash
-POST /claims/:id/classify   {policyholderId?}   # -> claim + baseline vs. rule-applied trace
-POST /claims/:id/assign                          # -> best-scoring handler + ranked candidates
-POST /claims/:id/override    {handlerId, reason, overrideBy}
-GET  /claims/queue/status                        # pending/assigned counts, SLA breaches, handler workloads
-```
-
-`HandlersRepository` and `AssignmentLogRepository` are Connector SDK ports
-(`@pc-core/ports`) alongside `ClaimsRepository` — a connected company's own
-adjuster roster and audit store slot in the same way its policy/claims data
-does; the in-memory defaults (`@pc-core/adapters`) seed a few demo handlers
-for the `demo` tenant.
-
-## Claim workbench — IRDAI clocks, coverage, payments, recovery
-
-Each claim now runs against IRDAI's general-insurance clocks (`irdaiClock` in
-`packages/claims-queue`): surveyor within 24 hours of intimation, survey report
-within 15 days, settlement within 7 days of the report. The windows are config
-(`DEFAULT_IRDAI_WINDOWS`). Coverage checks (`checkCoverage` in
-`packages/claims-ai`) are deterministic and explain themselves: cover in force
-on the incident date, the VAHAN result from FNOL, Engine Protect for water
-damage, police reports for theft.
-
-Payments are maker-checker: a handler can release up to their
-`paymentAuthority`; anything larger waits for a different handler with enough
-authority. Payments never exceed the reserve, and the reserve can't drop below
-what is committed. Every action lands in the claim's `activity` log.
-
-```bash
-GET  /claims/:id/coverage                                  # cover as-of incident + checks
-POST /claims/:id/surveyor        {name, by}                # INTIMATED -> SURVEY
-POST /claims/:id/survey-report   {assessedAmount, by}      # SURVEY -> ASSESSMENT
-POST /claims/:id/payments        {payee, payeeType, mode, account, ifsc?, amount, requestedBy}
-POST /claims/:id/payments/:paymentId/approve  {approvedBy}
-POST /claims/:id/recovery        {against, theirInsurer?, targetMin, targetMax, by}
-POST /claims/:id/recovery/steps  {step, amount?, note?, by}
-POST /claims/:id/recovery/settle {amount, date, by}
-GET  /claims/overview                                      # paid, reserves, recovered, IRDAI overdue
-GET  /handlers
-```
-
-In the portal, **Claims queue** lists open claims by IRDAI deadline, each claim
-opens a workbench page (`app/claims/[id]`), and **Claims overview** shows the
-totals. The workbench's "Acting as" picker is demo-grade (the portal has one
-shared login) — real per-user identity is a prerequisite for production
-maker-checker.
-
-## Documents & reporting (P6)
-
-Which documents a product issues is config (`product.forms` in the YAML);
-rendering is pure (`packages/forms`). Data is gathered by reconstructing the
-policy at inception, so a schedule always reflects the cover actually in force.
-
-```bash
-GET /policies/:id/documents             # forms this product issues (from config)
-GET /policies/:id/documents/schedule    # policy schedule (HTML, print-ready)
-GET /policies/:id/documents/certificate # Certificate of Insurance, Form 51 (HTML)
-GET /reports/premium-register           # IRDAI-style premium register (CSV)
-```
-
-Documents are watermarked **SPECIMEN** and clearly marked as not issued by a real
-insurer.
-
-## Bring your own backend (the Connector SDK)
-
-PC Core is a platform, not a silo: a company connects **their own system** and
-every feature above works against **their data**. Services never touch a database
-directly — only the storage contracts in `@pc-core/ports`
-(`PolicyRepository`, `BillingRepository`, `ClaimsRepository`). A connector is
-just an implementation of those interfaces, against a database or over HTTP.
-
-The API is **multi-tenant and self-serve**. Two tenants ship seeded for the demo:
-
-- **`demo`** — PC Core's own in-memory store
-- **`beta`** — a policy store that lives entirely in a separate process
-  (`apps/mock-insurer`) with a *deliberately different internal schema*
-  (`productCd`, lower-case `state`, risk as an opaque `riskBlob`), reached only
-  over HTTP via `RemoteHttpPolicyRepository`
-
-Any third company can **onboard at runtime, no restart, no code change** — point
-PC Core at a REST service implementing the connector contract and get back an
-API key:
-
-```bash
-curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
-  -d '{"name":"Gamma Insurance","policyBaseUrl":"https://gamma.example.com"}'
-# -> { "tenantId": "gamma-insurance-062a10", "name": "Gamma Insurance", "apiKey": "pk_..." }
-```
-
-Every route resolves its tenant from `Authorization: Bearer <apiKey>` (the real,
-per-connector path) or, for local demos, an unauthenticated `X-Tenant-Id` header:
-
-```bash
-curl -sX POST localhost:3000/quotes -H 'authorization: Bearer pk_...' \
-  -H 'content-type: application/json' -d '{ ...quote... }'
-# Gamma's issued policy is numbered by GAMMA'S OWN system and stored in its own
-# schema — PC Core never sees it. Beta's the same, via the seeded demo tenant.
-```
-
-Run the platform demo (API + a stand-in external insurer, printing both demo
-API keys on boot) with `pnpm platform`.
-
-## Claims-AI (from the technology matrix)
-
-Two pillars of the claims-technology matrix run as pure services behind
-**swappable provider interfaces** — `DocumentExtractor` and `FraudScorer`
-(`packages/claims-ai`) — so `ClaimsService` never depends on a concrete model:
-
-- **IDP / OCR** — `RegexDocumentExtractor` (the default: pulls registration
-  numbers, policy numbers, amounts and dates out of raw FNOL text, tuned for
-  the Indian document mix) or `LlmDocumentExtractor`, a reference adapter that
-  puts any `LlmClient` (Claude, GPT, a local model) behind the same interface —
-  strict-JSON prompting, safe degradation on a malformed or failed reply.
-- **Fraud scoring** — `HeuristicFraudScorer` (the default: repeat-claim and
-  early-incident signals) against `FraudScorer`, or `LlmFraudScorer`, a
-  reference adapter that has any `LlmClient` reason over the same signals and
-  return a score + explanation as strict JSON — falling back to the
-  deterministic heuristic on a malformed reply or a failed model call, so
-  fraud detection never goes silent because a model had a bad day.
-
-PC Core ships no hosted model — these are honest v1s proving the pillars
-end-to-end and defining the seam a company's own model plugs into per tenant
-(`ClaimsService`'s third constructor argument). FNOL returns `fraudScore`,
-`fraudSignals`, and `extractedFields`.
-
-### Bring your own open-source model (Ollama)
-
-`OllamaLlmClient` (`packages/claims-ai/src/ollama.ts`) is a concrete `LlmClient`
-adapter for a self-hosted [Ollama](https://ollama.com) server — pull any
-open-source model (`ollama pull llama3.1`) and point `LlmDocumentExtractor`
-and/or `LlmFraudScorer` at it. This is wired all the way through self-serve
-onboarding: pass `ollamaModel` (and optionally `ollamaBaseUrl`) to
-`POST /connectors/register`, or fill in the same fields on the portal's
-**Connectors** page, and that tenant's claim intake runs your model's
-extraction AND fraud scoring instead of the defaults — no code change.
-
-```bash
-curl -sX POST localhost:3000/connectors/register -H 'content-type: application/json' \
-  -d '{"name":"Delta Insurance","policyBaseUrl":"http://127.0.0.1:4000","ollamaModel":"llama3.1"}'
-```
-
-Any other model server works the same way — implement `LlmClient`'s single
-method (`complete(prompt): Promise<string>`) against it and pass that instead
-of `OllamaLlmClient` wherever `ClaimsAiProviders` is built.
-
-### Running your own local model, on your own infrastructure
-
-The Ollama flow above is for onboarding an **external** company's connector.
-A company running PC Core itself — on their own servers, with no internet
-egress required — can instead point their own primary tenant's claims-AI at
-a local model server with three environment variables, no code change:
-
-```bash
-LOCAL_LLM_MODEL=qwen2.5-3b-instruct
-LOCAL_LLM_BASE_URL=http://127.0.0.1:8080   # optional, defaults to this
-LOCAL_LLM_API_KEY=...                      # optional, most local servers ignore it
-```
-
-`OpenAiCompatibleLlmClient` (`packages/claims-ai/src/openai-compatible.ts`)
-speaks the standard OpenAI chat-completions HTTP shape that most local model
-runtimes implement — llama.cpp's `llama-server`, LM Studio, vLLM,
-text-generation-webui, and Ollama's own `/v1/chat/completions` endpoint all
-work against it unmodified. When `LOCAL_LLM_MODEL` is set, the demo tenant's
-`LlmDocumentExtractor` and `LlmFraudScorer` run against it instead of the
-built-in regex extractor and heuristic scorer, and the claim queue's
-classification step (below) gets an advisory `LlmTriageAdvisor` too.
-
-**The rules stay authoritative either way.** This is deliberately additive,
-not a replacement: `LlmFraudScorer` falls back to the deterministic
-`scoreFraudRisk` heuristic on a malformed reply or a failed model call
-(see "Claims-AI" above), and rating, the VAHAN vehicle cross-check, and every
-other rule in the platform run exactly as they do without a model configured.
-No model output is ever trusted without a check against the source claim
-data — the model narrows or explains, it never overrides.
-
-#### Claim-queue triage: an advisory hint, never a decision
-
-`ClaimQueueService.classify()` always runs the deterministic rules pipeline
-first (`classifyClaim` — see "the claim queue" below) and that result is
-final: `claim.priority`, `claim.claimType`, `claim.complexity`, and the SLA
-deadline are exactly what the rules say, model or no model.
-
-When a `TriageAdvisor` is configured (via `LOCAL_LLM_MODEL`, or `ollamaModel`
-on a self-serve connector), its suggestion is attached separately as
-`claim.aiTriageHint` — `{ suggestedPriority, suggestedClaimType, rationale,
-agreesWithRules }` — purely for a reviewer to see where the model and the
-rules disagree. `agreesWithRules` is computed by the service, not the model.
-`LlmTriageAdvisor` also refuses to report a value outside the same enum the
-rules pipeline uses (a model can suggest `"HIGH"`, never invent a priority
-level that doesn't exist), and degrades to no opinion at all — not a guess —
-on a malformed reply or a failed model call. The portal's Claims panel shows
-the hint next to the rules' own classification when one is present.
-
-PC Core ships no model weights or runtime binaries of its own; bring your
-own local server and point these variables at it.
-
-### Vehicle & document verification (VAHAN / DigiLocker)
-
-Two more Connector SDK ports follow the same "swappable provider, no hosted
-service shipped" shape, for fraud-prevention checks at FNOL:
-
-- **`VehicleRegistryPort`** (`packages/ports/src/vehicle-registry.ts`) — looks
-  up a vehicle's authoritative registration record (owner, chassis/engine
-  numbers, fitness/PUCC validity) by registration number, modeled on India's
-  national vehicle registry, VAHAN. `ClaimsService` uses it for an optional,
-  deterministic cross-check (`checkVehicleDetails` in `packages/claims-ai`) at
-  FNOL: if the tenant has a registry configured, the claimant's declared
-  chassis number, engine number, and owner name are compared against the
-  registry record, and any mismatch adds a `VEHICLE_DETAILS_MISMATCH` fraud
-  signal — pure and explainable, no LLM call. Skipped silently if no registry
-  is configured for the tenant, or if it has no record for the plate.
-- **`DocumentVerificationPort`** (`packages/ports/src/document-verification.ts`)
-  — a consent-based issuer-pull flow (`initiateConsent` → `fetchVerifiedDocument`)
-  for pulling a source-verified RC or DL, modeled on DigiLocker.
-
-Both ports ship **mock adapters only** — `MockVehicleRegistry` and
-`MockDigiLocker` (`packages/adapters`) — returning synthetic data for a
-handful of hardcoded records, with no real network calls. Real production use
-requires:
-
-- **VAHAN**: onboarding as an authorized requesting entity with NIC/MoRTH —
-  this is not a public API, and this repo does not implement or plan any real
-  call to `vahan.parivahan.gov.in`.
-- **DigiLocker**: DigiLocker Partner API approval (`api.digilocker.gov.in`).
-
-**Aadhaar/UIDAI integration is explicitly out of scope for this repo** — no
-Aadhaar authentication or e-KYC flow is implemented or planned. Swap in an
-authorized adapter behind either port for production use.
-
-## Next (from the build plan)
-
-- **richer rating** — pro-rated endorsement premium, renewal terms
-- **infra** — Postgres adapters now exist for every repository port (see "Where the database comes in"); still open: materialize the transaction-log domain model into the normalized `policy_period` rows so the GiST exclusion constraint is actually enforced; a `@pc-core/contracts` types package shared by api + web; wire claim settlements into the billing ledger; persist the tenant registry itself (currently in-memory, so registered connectors don't survive a restart)
-- **portal** — claims (FNOL), the claim queue, a login screen, and tenant switching now all surface in the agent portal (see "Agent portal (P4)")
-- **CI** — GitHub Actions now runs typecheck + tests + the portal build on every push/PR (`.github/workflows/ci.yml`)
-
-See the design note and build plan for the full picture.
+Documents are watermarked SPECIMEN.
+
+## Connect your own system
+
+Services only touch storage through the interfaces in `@pc-core/ports`. A
+company plugs in its own database or system by implementing them, or
+registers a REST service at runtime with `POST /connectors/register` and gets
+back an API key. The seeded `beta` tenant shows this: its policies live in
+`apps/mock-insurer`, with a different schema, reached only over HTTP.
+
+## Configuration
+
+| Variable | Used by | Purpose |
+|---|---|---|
+| `DATABASE_URL` | api | Run the `demo` tenant on Postgres (apply `packages/db/migrations` first) |
+| `LOCAL_LLM_MODEL`, `LOCAL_LLM_BASE_URL`, `LOCAL_LLM_API_KEY` | api | Point claims AI at an OpenAI-compatible local model server |
+| `BETA_URL` | api | Where the `beta` tenant's policy system runs (default `http://127.0.0.1:4000`) |
+| `PORT` | api, mock-insurer | Listen port |
+| `API_URL` | web | API base URL (default `http://127.0.0.1:3000`) |
+| `PORTAL_PASSWORD` | web | Portal login (default `pc-core-demo`) |
+| `PORTAL_AUTH_SECRET` | web | Signs the session cookie. Set a real one anywhere shared |
+
+## Limits
+
+- The portal has one shared login, so the claim page's "Acting as" picker
+  stands in for real users. Maker-checker needs per-user identity before
+  production.
+- VAHAN and DigiLocker ship as mock adapters only. Real use needs NIC/MoRTH
+  and DigiLocker partner onboarding. Aadhaar/e-KYC is out of scope.
+- The tenant registry is in memory, so registered connectors don't survive a
+  restart.
+
+## Next
+
+- Pro-rated endorsement premium and renewals
+- Enforce the `policy_period` exclusion constraint by materializing the
+  timeline into normalized rows
+- Post claim payments to the billing ledger
+- A shared `@pc-core/contracts` types package for api and web
+- Persist the tenant registry
