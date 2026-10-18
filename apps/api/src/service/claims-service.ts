@@ -1,13 +1,20 @@
 import { randomUUID } from "node:crypto";
 import {
+  checkCoverage,
   HeuristicFraudScorer,
   RegexDocumentExtractor,
   checkVehicleDetails,
+  type CoverageCheck,
   type DocumentExtractor,
   type ExtractedFields,
   type FraudScorer,
 } from "@pc-core/claims-ai";
-import type { Claim, ClaimsRepository, VehicleRegistryPort } from "@pc-core/ports";
+import type {
+  Claim,
+  ClaimsRepository,
+  PolicyAggregate,
+  VehicleRegistryPort,
+} from "@pc-core/ports";
 import { ServiceError } from "./errors.js";
 import type { PolicyService } from "./policy-service.js";
 
@@ -32,6 +39,20 @@ function daysBetween(from: string, to: string): number {
     (Date.parse(`${to}T00:00:00Z`) - Date.parse(`${from}T00:00:00Z`)) /
       MS_PER_DAY,
   );
+}
+
+/** Append a line to a claim's audit trail (newest first). */
+export function logActivity(claim: Claim, by: string, text: string): void {
+  claim.activity = [{ at: new Date().toISOString(), by, text }, ...(claim.activity ?? [])];
+}
+
+export interface CoverageView {
+  policy: Pick<PolicyAggregate, "policyId" | "policyNumber" | "status" | "term" | "insured">;
+  vehicle: { registrationNo?: string; make?: string; model?: string; idv?: number };
+  addOns: string[];
+  ncb: number;
+  sumInsured: number;
+  checks: CoverageCheck[];
 }
 
 /** Flatten the IDP extractor's typed output into the port's generic string map. */
@@ -111,6 +132,7 @@ export class ClaimsService {
 
     let fraudScore = score;
     const fraudSignals = [...signals];
+    let vehicleCheck: Claim["vehicleCheck"];
 
     // Optional, deterministic: if this tenant has a vehicle registry
     // configured, cross-check the declared vehicle identity against it.
@@ -130,6 +152,7 @@ export class ClaimsService {
           },
           record,
         );
+        vehicleCheck = mismatchSignals.length ? "MISMATCH" : "MATCHED";
         if (mismatchSignals.length) {
           fraudSignals.push(...mismatchSignals);
           fraudScore = clamp01(fraudScore + 0.35);
@@ -154,7 +177,11 @@ export class ClaimsService {
       ...(extractedFields && { extractedFields }),
       fraudScore,
       fraudSignals,
+      ...(vehicleCheck && { vehicleCheck }),
+      reportedAt: new Date().toISOString(),
+      stage: "INTIMATED",
     };
+    logActivity(claim, "System", "Claim intimated (FNOL)");
     await this.repo.create(claim);
     return claim;
   }
@@ -165,6 +192,14 @@ export class ClaimsService {
       throw new ServiceError("claim is already settled", "CONFLICT");
     }
     this.withinCover(cmd.amount, claim.sumInsured, "reserve");
+    const committed = (claim.payments ?? []).reduce((sum, p) => sum + p.amount, 0);
+    if (cmd.amount < committed) {
+      throw new ServiceError(
+        `reserve ${cmd.amount} is below the ${committed} already paid or awaiting approval`,
+        "BAD_REQUEST",
+      );
+    }
+    logActivity(claim, "System", `Reserve set from INR ${claim.reserveAmount} to INR ${cmd.amount}`);
     claim.reserveAmount = cmd.amount;
     claim.status = "RESERVED";
     await this.repo.save(claim);
@@ -182,12 +217,87 @@ export class ClaimsService {
     this.withinCover(cmd.amount, claim.sumInsured, "settlement");
     claim.settledAmount = cmd.amount;
     claim.status = "SETTLED";
+    if (claim.stage) claim.stage = "SETTLED";
+    logActivity(claim, "System", `Claim settled at INR ${cmd.amount}`);
     await this.repo.save(claim);
     return claim;
   }
 
   async get(claimId: string): Promise<Claim> {
     return this.load(claimId);
+  }
+
+  async list(): Promise<Claim[]> {
+    return this.repo.list();
+  }
+
+  /** IRDAI step 1: surveyor appointed — starts the 15-day report clock. */
+  async appointSurveyor(cmd: { claimId: string; name: string; by: string }): Promise<Claim> {
+    const claim = await this.load(cmd.claimId);
+    this.atStage(claim, "INTIMATED", "appoint a surveyor");
+    claim.surveyor = { name: cmd.name, appointedAt: new Date().toISOString() };
+    claim.stage = "SURVEY";
+    logActivity(claim, cmd.by, `Surveyor ${cmd.name} appointed`);
+    await this.repo.save(claim);
+    return claim;
+  }
+
+  /** IRDAI step 2: survey report received — starts the 7-day settlement clock. */
+  async recordSurveyReport(cmd: {
+    claimId: string;
+    assessedAmount: number;
+    by: string;
+  }): Promise<Claim> {
+    const claim = await this.load(cmd.claimId);
+    this.atStage(claim, "SURVEY", "record a survey report");
+    if (cmd.assessedAmount < 0) {
+      throw new ServiceError("assessed amount cannot be negative", "BAD_REQUEST");
+    }
+    this.withinCover(cmd.assessedAmount, claim.sumInsured, "assessed amount");
+    claim.surveyor = {
+      ...claim.surveyor!,
+      reportAt: new Date().toISOString(),
+      assessedAmount: cmd.assessedAmount,
+    };
+    claim.stage = "ASSESSMENT";
+    logActivity(claim, cmd.by, `Survey report received: assessed loss INR ${cmd.assessedAmount}`);
+    await this.repo.save(claim);
+    return claim;
+  }
+
+  /** The cover in force on the incident date, plus the coverage checks against it. */
+  async coverage(claimId: string): Promise<CoverageView> {
+    const claim = await this.load(claimId);
+    const policy = await this.policies.get(claim.policyId);
+    const snapshot = await this.policies.getAsOf(claim.policyId, claim.incidentDate);
+    const risk = snapshot?.risk ?? policy.base;
+    return {
+      policy: {
+        policyId: policy.policyId,
+        policyNumber: policy.policyNumber,
+        status: policy.status,
+        term: policy.term,
+        insured: policy.insured,
+      },
+      vehicle: {
+        registrationNo: risk.vehicle.registrationNo,
+        make: risk.vehicle.make,
+        model: risk.vehicle.model,
+        idv: risk.vehicle.idv,
+      },
+      addOns: risk.selectedAddOns,
+      ncb: risk.policy.ncb,
+      sumInsured: claim.sumInsured,
+      checks: checkCoverage({
+        cause: claim.cause,
+        incidentDate: claim.incidentDate,
+        term: policy.term,
+        cancelledEffectiveFrom: policy.cancelledEffectiveFrom,
+        addOns: risk.selectedAddOns,
+        vehicleCheck: claim.vehicleCheck,
+        fraudScore: claim.fraudScore,
+      }),
+    };
   }
 
   // ── internals ────────────────────────────────────────────────────────────
@@ -197,6 +307,15 @@ export class ClaimsService {
       throw new ServiceError(
         `${label} ${amount} exceeds sum insured ${sumInsured}`,
         "BAD_REQUEST",
+      );
+    }
+  }
+
+  private atStage(claim: Claim, stage: Claim["stage"], action: string): void {
+    if (claim.stage !== stage) {
+      throw new ServiceError(
+        `cannot ${action}: claim is at stage ${claim.stage ?? "untracked"}, not ${stage}`,
+        "CONFLICT",
       );
     }
   }

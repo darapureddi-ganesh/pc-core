@@ -275,6 +275,40 @@ adjuster roster and audit store slot in the same way its policy/claims data
 does; the in-memory defaults (`@pc-core/adapters`) seed a few demo handlers
 for the `demo` tenant.
 
+## Claim workbench — IRDAI clocks, coverage, payments, recovery
+
+Each claim now runs against IRDAI's general-insurance clocks (`irdaiClock` in
+`packages/claims-queue`): surveyor within 24 hours of intimation, survey report
+within 15 days, settlement within 7 days of the report. The windows are config
+(`DEFAULT_IRDAI_WINDOWS`). Coverage checks (`checkCoverage` in
+`packages/claims-ai`) are deterministic and explain themselves: cover in force
+on the incident date, the VAHAN result from FNOL, Engine Protect for water
+damage, police reports for theft.
+
+Payments are maker-checker: a handler can release up to their
+`paymentAuthority`; anything larger waits for a different handler with enough
+authority. Payments never exceed the reserve, and the reserve can't drop below
+what is committed. Every action lands in the claim's `activity` log.
+
+```bash
+GET  /claims/:id/coverage                                  # cover as-of incident + checks
+POST /claims/:id/surveyor        {name, by}                # INTIMATED -> SURVEY
+POST /claims/:id/survey-report   {assessedAmount, by}      # SURVEY -> ASSESSMENT
+POST /claims/:id/payments        {payee, payeeType, mode, account, ifsc?, amount, requestedBy}
+POST /claims/:id/payments/:paymentId/approve  {approvedBy}
+POST /claims/:id/recovery        {against, theirInsurer?, targetMin, targetMax, by}
+POST /claims/:id/recovery/steps  {step, amount?, note?, by}
+POST /claims/:id/recovery/settle {amount, date, by}
+GET  /claims/overview                                      # paid, reserves, recovered, IRDAI overdue
+GET  /handlers
+```
+
+In the portal, **Claims queue** lists open claims by IRDAI deadline, each claim
+opens a workbench page (`app/claims/[id]`), and **Claims overview** shows the
+totals. The workbench's "Acting as" picker is demo-grade (the portal has one
+shared login) — real per-user identity is a prerequisite for production
+maker-checker.
+
 ## Documents & reporting (P6)
 
 Which documents a product issues is config (`product.forms` in the YAML);

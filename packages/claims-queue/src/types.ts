@@ -1,6 +1,8 @@
 export type ClaimType = "MOTOR_ACCIDENT" | "MOTOR_THEFT" | "MOTOR_OTHER";
 export type Priority = "LOW" | "MEDIUM" | "HIGH" | "CRITICAL";
 export type Complexity = "SIMPLE" | "MODERATE" | "COMPLEX";
+/** Where a claim is in the IRDAI-regulated survey workflow (see irdai.ts). */
+export type ClaimStage = "INTIMATED" | "SURVEY" | "ASSESSMENT" | "SETTLED";
 
 /** A handler (adjuster) claims can be routed to — part of the Connector SDK. */
 export interface Handler {
@@ -13,6 +15,9 @@ export interface Handler {
   isAvailable: boolean;
   avgHandlingDays: number;
   experienceYears: number;
+  /** largest claim payment (INR) this handler may release without a second
+   * approver; absent means they cannot release payments at all */
+  paymentAuthority?: number;
 }
 
 /** The handler storage contract — an in-memory default ships in @pc-core/adapters. */

@@ -86,6 +86,72 @@ export interface Claim {
     agreesWithRules: boolean;
   };
   assignedHandlerId?: string;
+  reportedAt?: string;
+  stage?: "INTIMATED" | "SURVEY" | "ASSESSMENT" | "SETTLED";
+  surveyor?: { name: string; appointedAt: string; reportAt?: string; assessedAmount?: number };
+  vehicleCheck?: "MATCHED" | "MISMATCH";
+  payments?: ClaimPayment[];
+  recovery?: Recovery;
+  activity?: Array<{ at: string; by: string; text: string }>;
+}
+
+export interface ClaimPayment {
+  paymentId: string;
+  payee: string;
+  payeeType: "GARAGE" | "INSURED" | "SURVEYOR" | "CLAIMANT";
+  mode: "NEFT" | "IMPS" | "UPI";
+  destination: string;
+  amount: number;
+  status: "RELEASED" | "AWAITING_APPROVAL";
+  requestedBy: string;
+  approvedBy?: string;
+  createdAt: string;
+}
+
+export interface Recovery {
+  against: string;
+  theirInsurer?: string;
+  targetMin: number;
+  targetMax: number;
+  steps: Array<{ at: string; step: string; amount?: number; note?: string }>;
+  settledAmount?: number;
+  settledOn?: string;
+}
+
+export interface IrdaiClock {
+  step: "APPOINT_SURVEYOR" | "SURVEY_REPORT" | "SETTLEMENT";
+  rule: string;
+  dueAt: string;
+  overdue: boolean;
+}
+
+export interface Handler {
+  handlerId: string;
+  name: string;
+  expertise: string[];
+  isAvailable: boolean;
+  paymentAuthority?: number;
+}
+
+export interface CoverageView {
+  policy: { policyId: string; policyNumber: string | null; status: string; term: { from: string; to: string }; insured?: { name: string } };
+  vehicle: { registrationNo?: string; make?: string; model?: string; idv?: number };
+  addOns: string[];
+  ncb: number;
+  sumInsured: number;
+  checks: Array<{ state: "PASS" | "CHECK" | "FAIL"; title: string; detail: string }>;
+}
+
+export interface ClaimsOverview {
+  openClaims: number;
+  outstandingReserves: number;
+  paid: number;
+  awaitingApproval: number;
+  recovered: number;
+  irdaiOverdue: number;
+  byStage: Record<string, number>;
+  paidByClaimType: Record<string, number>;
+  paidByHandler: Record<string, number>;
 }
 
 export interface ClassifyResult {
@@ -149,4 +215,6 @@ export interface QueueStatus {
   avgSlaRisk: number;
   pendingClaims: Claim[];
   handlerWorkloads: HandlerWorkload[];
+  openClaims: Array<Claim & { irdai: IrdaiClock | null }>;
+  irdaiOverdue: number;
 }

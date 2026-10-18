@@ -1,10 +1,12 @@
 import {
   classifyClaim,
   computeSla,
+  irdaiClock,
   rankHandlers,
   DEFAULT_COMPANY_RULES,
   type CompanyRules,
   type HandlerScore,
+  type IrdaiClock,
 } from "@pc-core/claims-queue";
 import type { TriageAdvisor } from "@pc-core/claims-ai";
 import type {
@@ -14,6 +16,7 @@ import type {
   HandlersRepository,
 } from "@pc-core/ports";
 import { ServiceError } from "./errors.js";
+import { logActivity } from "./claims-service.js";
 
 export interface HandlerWorkload {
   handlerId: string;
@@ -31,6 +34,9 @@ export interface QueueStatus {
   avgSlaRisk: number;
   pendingClaims: Claim[];
   handlerWorkloads: HandlerWorkload[];
+  /** every unsettled claim with the IRDAI deadline it is running against, soonest first */
+  openClaims: Array<Claim & { irdai: IrdaiClock | null }>;
+  irdaiOverdue: number;
 }
 
 export interface ClassifyResult {
@@ -191,6 +197,10 @@ export class ClaimQueueService {
     });
 
     const pendingClaims = withLiveSla.filter((c) => !c.assignedHandlerId);
+    const openClaims = withLiveSla
+      .filter((c) => c.status !== "SETTLED")
+      .map((c) => ({ ...c, irdai: irdaiClock(c, asOf) }))
+      .sort((a, b) => (a.irdai?.dueAt ?? "~").localeCompare(b.irdai?.dueAt ?? "~"));
     const scored = withLiveSla.filter((c) => c.slaRiskScore !== undefined);
 
     return {
@@ -208,6 +218,8 @@ export class ClaimQueueService {
         maxCapacity: h.maxCapacity,
         utilizationRatio: h.maxCapacity ? h.currentWorkload / h.maxCapacity : 0,
       })),
+      openClaims,
+      irdaiOverdue: openClaims.filter((c) => c.irdai?.overdue).length,
     };
   }
 
@@ -227,6 +239,7 @@ export class ClaimQueueService {
       if (next) {
         next.currentWorkload += 1;
         await this.handlers.save(next);
+        logActivity(claim, "System", `Assigned to ${next.name}`);
       }
     }
     claim.assignedHandlerId = handlerId;

@@ -13,6 +13,8 @@ export type { BillingAccount, BillingRepository } from "./billing.js";
 export type {
   ClaimStatus,
   Claim,
+  ClaimPayment,
+  Recovery,
   ClaimsRepository,
   Handler,
   HandlersRepository,

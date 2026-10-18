@@ -1,4 +1,4 @@
-import type { ClaimType, Complexity, Priority } from "@pc-core/claims-queue";
+import type { ClaimStage, ClaimType, Complexity, Priority } from "@pc-core/claims-queue";
 
 export type ClaimStatus = "OPEN" | "RESERVED" | "SETTLED";
 
@@ -43,6 +43,46 @@ export interface Claim {
 
   // ── assignment (set by ClaimQueueService.assign / .override) ──
   assignedHandlerId?: string;
+
+  // ── IRDAI survey workflow (set by ClaimsService; absent on older claims) ──
+  /** when the claim was intimated (ISO date-time) — starts the 24 h surveyor clock */
+  reportedAt?: string;
+  stage?: ClaimStage;
+  surveyor?: { name: string; appointedAt: string; reportAt?: string; assessedAmount?: number };
+  /** result of the VAHAN cross-check at FNOL; absent when no registry ran */
+  vehicleCheck?: "MATCHED" | "MISMATCH";
+
+  // ── money out and money back (set by ClaimFinanceService) ──
+  payments?: ClaimPayment[];
+  recovery?: Recovery;
+
+  /** human-readable audit trail of workflow, payment and recovery actions */
+  activity?: Array<{ at: string; by: string; text: string }>;
+}
+
+export interface ClaimPayment {
+  paymentId: string;
+  payee: string;
+  payeeType: "GARAGE" | "INSURED" | "SURVEYOR" | "CLAIMANT";
+  mode: "NEFT" | "IMPS" | "UPI";
+  /** masked account (IFSC · xx1234) or the UPI ID */
+  destination: string;
+  amount: number;
+  status: "RELEASED" | "AWAITING_APPROVAL";
+  requestedBy: string; // handlerId
+  approvedBy?: string; // handlerId
+  createdAt: string;
+}
+
+/** Subrogation / salvage recovery against an at-fault party or buyer. */
+export interface Recovery {
+  against: string;
+  theirInsurer?: string;
+  targetMin: number;
+  targetMax: number;
+  steps: Array<{ at: string; step: string; amount?: number; note?: string }>;
+  settledAmount?: number;
+  settledOn?: string;
 }
 
 /** The claims storage contract — part of the Connector SDK. `list()` lets the

@@ -71,6 +71,32 @@ const overrideSchema = z.object({
   reason: z.string().min(1),
   overrideBy: z.string().min(1),
 });
+const bySchema = z.object({ by: z.string().min(1) });
+const surveyorSchema = bySchema.extend({ name: z.string().min(1) });
+const surveyReportSchema = bySchema.extend({ assessedAmount: z.number() });
+const paymentCmdSchema = z.object({
+  payee: z.string().min(1),
+  payeeType: z.enum(["GARAGE", "INSURED", "SURVEYOR", "CLAIMANT"]),
+  mode: z.enum(["NEFT", "IMPS", "UPI"]),
+  account: z.string().min(1),
+  ifsc: z.string().optional(),
+  amount: z.number(),
+  requestedBy: z.string().min(1),
+});
+const approveSchema = z.object({ approvedBy: z.string().min(1) });
+const recoverySchema = bySchema.extend({
+  against: z.string().min(1),
+  theirInsurer: z.string().optional(),
+  targetMin: z.number(),
+  targetMax: z.number(),
+});
+const recoveryStepSchema = bySchema.extend({
+  step: z.string().min(1),
+  amount: z.number().optional(),
+  note: z.string().optional(),
+});
+const recoverySettleSchema = bySchema.extend({ amount: z.number(), date: z.string() });
+
 const registerConnectorSchema = z.object({
   name: z.string().min(1),
   policyBaseUrl: z.string().url(),
@@ -273,6 +299,62 @@ export function buildServer(registry: TenantRegistry): FastifyInstance {
   );
 
   app.get("/claims/queue/status", async (req) => services(req).claimQueue.queueStatus());
+
+  // ── claim workbench: IRDAI survey workflow, coverage, payments, recovery ────
+  app.get("/handlers", async (req) => services(req).claimFinance.listHandlers());
+
+  app.get("/claims/overview", async (req) => services(req).claimFinance.overview());
+
+  app.get("/claims/:id/coverage", async (req) => services(req).claims.coverage(id(req)));
+
+  app.post("/claims/:id/surveyor", async (req) =>
+    services(req).claims.appointSurveyor({ claimId: id(req), ...surveyorSchema.parse(req.body) }),
+  );
+
+  app.post("/claims/:id/survey-report", async (req) =>
+    services(req).claims.recordSurveyReport({
+      claimId: id(req),
+      ...surveyReportSchema.parse(req.body),
+    }),
+  );
+
+  app.post("/claims/:id/payments", async (req, reply) => {
+    const claim = await services(req).claimFinance.addPayment({
+      claimId: id(req),
+      ...paymentCmdSchema.parse(req.body),
+    });
+    return reply.status(201).send(claim);
+  });
+
+  app.post("/claims/:id/payments/:paymentId/approve", async (req) =>
+    services(req).claimFinance.approvePayment({
+      claimId: id(req),
+      paymentId: (req.params as { paymentId: string }).paymentId,
+      ...approveSchema.parse(req.body),
+    }),
+  );
+
+  app.post("/claims/:id/recovery", async (req, reply) => {
+    const claim = await services(req).claimFinance.openRecovery({
+      claimId: id(req),
+      ...recoverySchema.parse(req.body),
+    });
+    return reply.status(201).send(claim);
+  });
+
+  app.post("/claims/:id/recovery/steps", async (req) =>
+    services(req).claimFinance.addRecoveryStep({
+      claimId: id(req),
+      ...recoveryStepSchema.parse(req.body),
+    }),
+  );
+
+  app.post("/claims/:id/recovery/settle", async (req) =>
+    services(req).claimFinance.settleRecovery({
+      claimId: id(req),
+      ...recoverySettleSchema.parse(req.body),
+    }),
+  );
 
   // ── documents & reporting ─────────────────────────────────────────────────
   app.get("/policies/:id/documents", async (req) =>

@@ -6,6 +6,10 @@ import type {
   BillingStatement,
   ClassifyResult,
   Claim,
+  ClaimPayment,
+  ClaimsOverview,
+  CoverageView,
+  Handler,
   Policy,
   QueueStatus,
   QuoteInput,
@@ -160,3 +164,54 @@ export async function getQueueStatus(): Promise<QueueStatus> {
   if (!res.ok) throw new Error(await readError(res));
   return res.json();
 }
+
+// ── claim workbench ─────────────────────────────────────────────────────────
+
+async function call<T>(path: string, body?: unknown): Promise<T> {
+  const res = await fetch(`${API}${path}`, {
+    method: body === undefined ? "GET" : "POST",
+    headers: {
+      ...(body === undefined ? {} : { "content-type": "application/json" }),
+      ...(await tenantHeaders()),
+    },
+    ...(body !== undefined && { body: JSON.stringify(body) }),
+    cache: "no-store",
+  });
+  if (!res.ok) throw new Error(await readError(res));
+  return res.json();
+}
+
+export const getClaim = async (claimId: string) => call<Claim>(`/claims/${claimId}`);
+export const getCoverage = async (claimId: string) => call<CoverageView>(`/claims/${claimId}/coverage`);
+export const listHandlers = async () => call<Handler[]>("/handlers");
+export const getClaimsOverview = async () => call<ClaimsOverview>("/claims/overview");
+
+export const setReserve = async (claimId: string, amount: number) =>
+  call<Claim>(`/claims/${claimId}/reserve`, { amount });
+export const settleClaim = async (claimId: string, amount: number) =>
+  call<Claim>(`/claims/${claimId}/settle`, { amount });
+export const appointSurveyor = async (claimId: string, name: string, by: string) =>
+  call<Claim>(`/claims/${claimId}/surveyor`, { name, by });
+export const recordSurveyReport = async (claimId: string, assessedAmount: number, by: string) =>
+  call<Claim>(`/claims/${claimId}/survey-report`, { assessedAmount, by });
+
+export const addPayment = async (
+  claimId: string,
+  cmd: Pick<ClaimPayment, "payee" | "payeeType" | "mode" | "amount" | "requestedBy"> & {
+    account: string;
+    ifsc?: string;
+  },
+) => call<Claim>(`/claims/${claimId}/payments`, cmd);
+export const approvePayment = async (claimId: string, paymentId: string, approvedBy: string) =>
+  call<Claim>(`/claims/${claimId}/payments/${paymentId}/approve`, { approvedBy });
+
+export const openRecovery = async (
+  claimId: string,
+  cmd: { against: string; theirInsurer?: string; targetMin: number; targetMax: number; by: string },
+) => call<Claim>(`/claims/${claimId}/recovery`, cmd);
+export const addRecoveryStep = async (
+  claimId: string,
+  cmd: { step: string; amount?: number; note?: string; by: string },
+) => call<Claim>(`/claims/${claimId}/recovery/steps`, cmd);
+export const settleRecovery = async (claimId: string, amount: number, date: string, by: string) =>
+  call<Claim>(`/claims/${claimId}/recovery/settle`, { amount, date, by });

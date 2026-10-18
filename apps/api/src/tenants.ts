@@ -32,6 +32,7 @@ import { PolicyService } from "./service/policy-service.js";
 import { BillingService } from "./service/billing-service.js";
 import { ClaimsService } from "./service/claims-service.js";
 import { ClaimQueueService } from "./service/claim-queue-service.js";
+import { ClaimFinanceService } from "./service/claim-finance-service.js";
 import { CustomerService } from "./service/customer-service.js";
 import { DocumentService } from "./service/document-service.js";
 
@@ -42,6 +43,7 @@ export interface TenantServices {
   billing: BillingService;
   claims: ClaimsService;
   claimQueue: ClaimQueueService;
+  claimFinance: ClaimFinanceService;
   customers: CustomerService;
   documents: DocumentService;
 }
@@ -57,6 +59,7 @@ const DEMO_HANDLERS: Handler[] = [
     isAvailable: true,
     avgHandlingDays: 4,
     experienceYears: 6,
+    paymentAuthority: 100_000,
   },
   {
     handlerId: "h-2",
@@ -67,6 +70,7 @@ const DEMO_HANDLERS: Handler[] = [
     isAvailable: true,
     avgHandlingDays: 8,
     experienceYears: 9,
+    paymentAuthority: 500_000,
   },
   {
     handlerId: "h-3",
@@ -77,6 +81,7 @@ const DEMO_HANDLERS: Handler[] = [
     isAvailable: false,
     avgHandlingDays: 3,
     experienceYears: 3,
+    paymentAuthority: 200_000,
   },
 ];
 
@@ -99,9 +104,10 @@ function buildServices(
   );
   const claimsRepo = connector.claims ?? new InMemoryClaimsRepository();
   const claims = new ClaimsService(claimsRepo, policy, claimsAi);
+  const handlers = connector.handlers ?? new InMemoryHandlersRepository(seedHandlers);
   const claimQueue = new ClaimQueueService(
     claimsRepo,
-    connector.handlers ?? new InMemoryHandlersRepository(seedHandlers),
+    handlers,
     connector.assignmentLog ?? new InMemoryAssignmentLogRepository(),
     undefined, // company rules: use ClaimQueueService's own DEFAULT_COMPANY_RULES
     triageAdvisor,
@@ -112,7 +118,8 @@ function buildServices(
     claimsRepo,
   );
   const documents = new DocumentService(policy);
-  return { info, policy, billing, claims, claimQueue, customers, documents };
+  const claimFinance = new ClaimFinanceService(claimsRepo, handlers);
+  return { info, policy, billing, claims, claimQueue, claimFinance, customers, documents };
 }
 
 /**

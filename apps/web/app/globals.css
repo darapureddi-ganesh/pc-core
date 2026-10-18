@@ -546,3 +546,94 @@ button.secondary:disabled {
   opacity: 0.5;
   cursor: default;
 }
+
+/* ── claim workbench ── */
+.span-2 {
+  grid-column: 1 / -1;
+}
+.queue-summary {
+  grid-template-columns: repeat(auto-fit, minmax(140px, 1fr));
+}
+.table-scroll {
+  overflow-x: auto;
+}
+.queue-table tr.overdue td:first-child {
+  box-shadow: inset 3px 0 var(--crit);
+}
+.queue-table .num {
+  text-align: right;
+  font-family: var(--mono);
+  font-variant-numeric: tabular-nums;
+  white-space: nowrap;
+}
+.sub {
+  font-size: 0.76rem;
+  color: var(--ink-3);
+}
+.mono-link {
+  font-family: var(--mono);
+  color: var(--accent-ink);
+}
+.eyebrow a {
+  color: inherit;
+}
+.stages {
+  display: flex;
+  flex-wrap: wrap;
+  gap: 0.4rem;
+  list-style: none;
+  padding: 0;
+  margin: 0.8rem 0;
+}
+.stages li {
+  font-family: var(--mono);
+  font-size: 0.72rem;
+  padding: 0.25rem 0.6rem;
+  border: 1px solid var(--line-strong);
+  border-radius: 3px;
+  color: var(--ink-3);
+}
+.stages li.done {
+  color: var(--good);
+}
+.stages li.active {
+  color: var(--accent-ink);
+  border-color: var(--accent);
+  background: var(--accent-soft);
+  font-weight: 700;
+}
+.acting-as {
+  max-width: 420px;
+  margin: 0.6rem 0 0;
+}
+.checks {
+  list-style: none;
+  padding: 0;
+  margin: 0 0 1rem;
+  display: flex;
+  flex-direction: column;
+  gap: 0.6rem;
+}
+.checks li {
+  display: grid;
+  grid-template-columns: 5.5rem 1fr;
+  gap: 0.6rem;
+  align-items: start;
+  font-size: 0.88rem;
+}
+.checks .pill {
+  text-align: center;
+}
+.inline-form {
+  display: flex;
+  flex-wrap: wrap;
+  align-items: end;
+  gap: 0 0.8rem;
+  margin-bottom: 0.8rem;
+}
+.inline-form .field {
+  flex: 1 1 140px;
+}
+.inline-form button {
+  margin-bottom: 0.9rem;
+}

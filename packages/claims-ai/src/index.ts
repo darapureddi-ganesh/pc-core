@@ -32,3 +32,6 @@ export type {
   RegistryVehicleDetails,
   VehicleVerificationResult,
 } from "./vehicle-verification.js";
+
+export { checkCoverage } from "./coverage.js";
+export type { CoverageCheck, CoverageCheckState, CoverageInput } from "./coverage.js";
